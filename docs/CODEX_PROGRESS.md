@@ -177,5 +177,10 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
   `models\…\encoder…onnx`, `docs\USER_GUIDE.md`, `ja\…resources.dll`, `Run-LocalMeetingSubtitle.cmd`
   all present; Start-menu shortcut created; the installed app logs
   `model=streaming-zipformer-zh-14M installed=True, devices=1`.
-- The portable **ZIP was never affected**; only the MSI/Bundle were broken — both have been rebuilt and
-  re-signed, and the GitHub release assets were replaced.
+- The portable **ZIP was never affected**; only the MSI/Bundle were broken — both have been rebuilt, and
+  the GitHub release assets were replaced.
+- **Second P1 found while verifying the bundle:** signing the Burn `Setup.exe` after build broke it
+  (`0x80070002 Failed to acquire container: WixAttachedContainer`, exit 0x2, nothing installed) because
+  Authenticode appends the signature at the end of the PE file and corrupts Burn's container location.
+  `build-installer.ps1` no longer signs the bundle (the MSI and app exe stay signed). Re-verified:
+  `Setup.exe /quiet` → exit 0, 519/519 files, model found, Start-menu shortcut created.

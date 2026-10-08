@@ -56,9 +56,13 @@ Write-Host "[3/4] Building Setup.exe (Burn bundle) ..."
 if ($CertThumbprint) {
     Write-Host "[4/4] Signing with certificate $CertThumbprint ..."
     $cert = Get-Item "Cert:\CurrentUser\My\$CertThumbprint"
+    # NOTE: the Burn bundle (Setup.exe) is deliberately NOT signed. Authenticode appends the
+    # signature at the end of the file, which breaks the attached-container location Burn uses —
+    # the signed bundle then fails with 0x80070002 ("Failed to acquire container: WixAttachedContainer")
+    # and installs nothing. Signing the MSI and the app exe is safe and is what matters for the
+    # installed product. (To sign a bundle you must use the engine-signing workflow instead.)
     foreach ($f in @("$AppFiles/LocalMeetingSubtitle.exe",
-                     "dist/LocalMeetingSubtitle-Setup.msi",
-                     "dist/LocalMeetingSubtitle-Setup.exe")) {
+                     "dist/LocalMeetingSubtitle-Setup.msi")) {
         if (Test-Path $f) {
             Set-AuthenticodeSignature -FilePath $f -Certificate $cert -HashAlgorithm SHA256 | Out-Null
         }

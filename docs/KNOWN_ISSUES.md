@@ -14,6 +14,7 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 | P2 | `MockAsrEngine` streaming could spin forever | Medium (test-only) | **FIXED** |
 | P1 | Installer flattened the folder tree (`models\` lost, 238 files silently dropped) | High (release) | **FIXED** + re-verified 519/519 files |
 | P2 | `MaterialDesignVerticalSeparator` does not exist in MaterialDesignThemes 5.3.2 | Medium (UI) | **FIXED** |
+| P1 | Signed Burn `Setup.exe` could not install (0x80070002 — container lost) | High (release) | **FIXED** (bundle intentionally unsigned; MSI + app exe stay signed) |
 | P3-1 | Subtitle selection is row-level, not character-level | Low | Open |
 | P3-2 | `AppSettings.EnableVadSegmenting` persisted but not wired | Low | Open |
 | P3-3 | `AsrNumThreads` applies at next Start / engine swap, not live | Low | Open |
@@ -40,6 +41,21 @@ documentation-level) limitation, or an item blocked purely by the absence of the
   `models\…\encoder…onnx`, `docs\USER_GUIDE.md`, `ja\…resources.dll` all present; the installed app
   logs `model=streaming-zipformer-zh-14M installed=True` and a Start-menu shortcut is created.
 - The portable **ZIP was never affected** (it preserves the tree by construction) — only the MSI/Bundle.
+
+### P1 — Signed Burn `Setup.exe` failed to install *(FIXED)*
+
+- **Symptom:** double-clicking `LocalMeetingSubtitle-Setup.exe` did nothing useful; the Burn log showed
+  `Error 0x80070002: Failed to acquire container: WixAttachedContainer` → `exit code 0x2`, nothing installed.
+- **Root cause:** I applied an Authenticode signature to the **burn bundle after building it**.
+  Authenticode appends the signature at the end of the PE file, which invalidates the location Burn uses
+  to find its attached (embedded) container — so the bundle could not find its own MSI payload.
+  Signing the MSI is safe; signing the bundle this way is not.
+- **Fix:** `installer/build-installer.ps1` no longer signs `Setup.exe` (documented in the script). The
+  app exe and the MSI remain signed. Because the certificate is self-signed, the signature was never
+  trusted anyway, so nothing is lost.
+- **Verification:** `Setup.exe /quiet` → **exit 0, 519/519 files, model present, Start-menu shortcut**.
+- A correct signed bundle would require the WiX engine-signing workflow (sign the engine before it is
+  attached), which was out of scope given the certificate cannot be trusted regardless.
 
 ### P2 — `MaterialDesignVerticalSeparator` style does not exist *(FIXED)*
 
