@@ -1,0 +1,835 @@
+### SherpaOnnx.AudioEvent : Object [class]
+    .ctor(IntPtr handle)
+    prop String Name { get; }
+    prop Int32 Index { get; }
+    prop Single Prob { get; }
+    method String get_Name()
+    method Int32 get_Index()
+    method Single get_Prob()
+
+### SherpaOnnx.AudioTagging : Object [class]
+    .ctor(AudioTaggingConfig config)
+    method OfflineStream CreateStream()
+    method AudioEvent[] Compute(OfflineStream stream, Int32 topK)
+    method Void Dispose()
+
+### SherpaOnnx.AudioTaggingConfig : ValueType [struct]
+    .ctor()
+    field AudioTaggingModelConfig Model
+    field String Labels
+    field Int32 TopK
+
+### SherpaOnnx.AudioTaggingModelConfig : ValueType [struct]
+    .ctor()
+    field OfflineZipformerAudioTaggingModelConfig Zipformer
+    field String CED
+    field Int32 NumThreads
+    field Int32 Debug
+    field String Provider
+
+### SherpaOnnx.CircularBuffer : Object [class]
+    .ctor(Int32 capacity)
+    prop Int32 Size { get; }
+    prop Int32 Head { get; }
+    method Void Push(Single[] data)
+    method Single[] Get(Int32 startIndex, Int32 n)
+    method Void Pop(Int32 n)
+    method Int32 get_Size()
+    method Int32 get_Head()
+    method Void Reset()
+    method Void Dispose()
+
+### SherpaOnnx.DenoisedAudio : Object [class]
+    .ctor(IntPtr p)
+    prop IntPtr Handle { get; }
+    prop Int32 NumSamples { get; }
+    prop Int32 SampleRate { get; }
+    prop Single[] Samples { get; }
+    method Boolean SaveToWaveFile(String filename)
+    method Boolean SaveToWaveFile(Single[] samples, Int32 sampleRate, String filename)
+    method Void Dispose()
+    method IntPtr get_Handle()
+    method Int32 get_NumSamples()
+    method Int32 get_SampleRate()
+    method Single[] get_Samples()
+
+### SherpaOnnx.FastClusteringConfig : ValueType [struct]
+    .ctor()
+    field Int32 NumClusters
+    field Single Threshold
+    field Int32 ComputeConfidence
+
+### SherpaOnnx.FeatureConfig : ValueType [struct]
+    .ctor()
+    field Int32 SampleRate
+    field Int32 FeatureDim
+
+### SherpaOnnx.HomophoneReplacerConfig : ValueType [struct]
+    .ctor()
+    field String DictDir
+    field String Lexicon
+    field String RuleFsts
+
+### SherpaOnnx.KeywordResult : Object [class]
+    .ctor(IntPtr handle)
+    prop String Keyword { get; }
+    method String get_Keyword()
+
+### SherpaOnnx.KeywordSpotter : Object [class]
+    .ctor(KeywordSpotterConfig config)
+    method OnlineStream CreateStream()
+    method OnlineStream CreateStream(String keywords)
+    method Boolean IsReady(OnlineStream stream)
+    method Void Decode(OnlineStream stream)
+    method Void Reset(OnlineStream stream)
+    method Void Decode(IEnumerable`1 streams)
+    method KeywordResult GetResult(OnlineStream stream)
+    method Void Dispose()
+
+### SherpaOnnx.KeywordSpotterConfig : ValueType [struct]
+    .ctor()
+    field FeatureConfig FeatConfig
+    field OnlineModelConfig ModelConfig
+    field Int32 MaxActivePaths
+    field Int32 NumTrailingBlanks
+    field Single KeywordsScore
+    field Single KeywordsThreshold
+    field String KeywordsFile
+    field String KeywordsBuf
+    field Int32 KeywordsBufSize
+
+### SherpaOnnx.MultiChannelWaveData : Object [class]
+    prop Int32 NumChannels { get; }
+    prop Int32 NumSamples { get; }
+    prop Int32 SampleRate { get; }
+    method Int32 get_NumChannels()
+    method Int32 get_NumSamples()
+    method Int32 get_SampleRate()
+    method Single[][] GetChannels()
+    method Void Dispose()
+
+### SherpaOnnx.OfflineCanaryModelConfig : ValueType [struct]
+    .ctor()
+    field String Encoder
+    field String Decoder
+    field String SrcLang
+    field String TgtLang
+    field Int32 UsePnc
+
+### SherpaOnnx.OfflineCohereTranscribeModelConfig : ValueType [struct]
+    .ctor()
+    field String Encoder
+    field String Decoder
+    field String Language
+    field Int32 UsePunct
+    field Int32 UseItn
+
+### SherpaOnnx.OfflineDolphinModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+
+### SherpaOnnx.OfflineFireRedAsrCtcModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+
+### SherpaOnnx.OfflineFireRedAsrModelConfig : ValueType [struct]
+    .ctor()
+    field String Encoder
+    field String Decoder
+
+### SherpaOnnx.OfflineFunAsrNanoModelConfig : ValueType [struct]
+    .ctor()
+    field String EncoderAdaptor
+    field String LLM
+    field String Embedding
+    field String Tokenizer
+    field String SystemPrompt
+    field String UserPrompt
+    field Int32 MaxNewTokens
+    field Single Temperature
+    field Single TopP
+    field Int32 Seed
+    field String Language
+    field Int32 Itn
+    field String Hotwords
+
+### SherpaOnnx.OfflineLMConfig : ValueType [struct]
+    .ctor()
+    field String Model
+    field Single Scale
+
+### SherpaOnnx.OfflineMedAsrCtcModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+
+### SherpaOnnx.OfflineModelConfig : ValueType [struct]
+    .ctor()
+    field OfflineTransducerModelConfig Transducer
+    field OfflineParaformerModelConfig Paraformer
+    field OfflineNemoEncDecCtcModelConfig NeMoCtc
+    field OfflineWhisperModelConfig Whisper
+    field OfflineTdnnModelConfig Tdnn
+    field String Tokens
+    field Int32 NumThreads
+    field Int32 Debug
+    field String Provider
+    field String ModelType
+    field String ModelingUnit
+    field String BpeVocab
+    field String TeleSpeechCtc
+    field OfflineSenseVoiceModelConfig SenseVoice
+    field OfflineMoonshineModelConfig Moonshine
+    field OfflineFireRedAsrModelConfig FireRedAsr
+    field OfflineDolphinModelConfig Dolphin
+    field OfflineZipformerCtcModelConfig ZipformerCtc
+    field OfflineCanaryModelConfig Canary
+    field OfflineWenetCtcModelConfig WenetCtc
+    field OfflineOmnilingualAsrCtcModelConfig Omnilingual
+    field OfflineMedAsrCtcModelConfig MedAsr
+    field OfflineFunAsrNanoModelConfig FunAsrNano
+    field OfflineFireRedAsrCtcModelConfig FireRedAsrCtc
+    field OfflineQwen3AsrModelConfig Qwen3Asr
+    field OfflineCohereTranscribeModelConfig CohereTranscribe
+
+### SherpaOnnx.OfflineMoonshineModelConfig : ValueType [struct]
+    .ctor()
+    field String Preprocessor
+    field String Encoder
+    field String UncachedDecoder
+    field String CachedDecoder
+    field String MergedDecoder
+
+### SherpaOnnx.OfflineNemoEncDecCtcModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+
+### SherpaOnnx.OfflineOmnilingualAsrCtcModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+
+### SherpaOnnx.OfflineParaformerModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+
+### SherpaOnnx.OfflinePunctuation : Object [class]
+    .ctor(OfflinePunctuationConfig config)
+    method String AddPunct(String text)
+    method Void Dispose()
+
+### SherpaOnnx.OfflinePunctuationConfig : ValueType [struct]
+    .ctor()
+    field OfflinePunctuationModelConfig Model
+
+### SherpaOnnx.OfflinePunctuationModelConfig : ValueType [struct]
+    .ctor()
+    field String CtTransformer
+    field Int32 NumThreads
+    field Int32 Debug
+    field String Provider
+
+### SherpaOnnx.OfflineQwen3AsrModelConfig : ValueType [struct]
+    .ctor()
+    field String ConvFrontend
+    field String Encoder
+    field String Decoder
+    field String Tokenizer
+    field Int32 MaxTotalLen
+    field Int32 MaxNewTokens
+    field Single Temperature
+    field Single TopP
+    field Int32 Seed
+    field String Hotwords
+
+### SherpaOnnx.OfflineRecognizer : Object [class]
+    .ctor(OfflineRecognizerConfig config)
+    method Void SetConfig(OfflineRecognizerConfig config)
+    method OfflineStream CreateStream()
+    method Void Decode(OfflineStream stream)
+    method Void Decode(IEnumerable`1 streams)
+    method Void Dispose()
+
+### SherpaOnnx.OfflineRecognizerConfig : ValueType [struct]
+    .ctor()
+    field FeatureConfig FeatConfig
+    field OfflineModelConfig ModelConfig
+    field OfflineLMConfig LmConfig
+    field String DecodingMethod
+    field Int32 MaxActivePaths
+    field String HotwordsFile
+    field Single HotwordsScore
+    field String RuleFsts
+    field String RuleFars
+    field Single BlankPenalty
+    field HomophoneReplacerConfig Hr
+
+### SherpaOnnx.OfflineRecognizerResult : Object [class]
+    .ctor(IntPtr handle)
+    prop String Text { get; }
+    prop String[] Tokens { get; }
+    prop Single[] Timestamps { get; }
+    prop Single[] Durations { get; }
+    method String get_Text()
+    method String[] get_Tokens()
+    method Single[] get_Timestamps()
+    method Single[] get_Durations()
+
+### SherpaOnnx.OfflineSenseVoiceModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+    field String Language
+    field Int32 UseInverseTextNormalization
+
+### SherpaOnnx.OfflineSourceSeparation : Object [class]
+    .ctor(OfflineSourceSeparationConfig config)
+    prop Int32 OutputSampleRate { get; }
+    prop Int32 NumberOfStems { get; }
+    method SourceSeparationOutput Process(Single[][] channels, Int32 sampleRate)
+    method Int32 get_OutputSampleRate()
+    method Int32 get_NumberOfStems()
+    method Void Dispose()
+    method MultiChannelWaveData ReadWaveMultiChannel(String filename)
+
+### SherpaOnnx.OfflineSourceSeparationConfig : ValueType [struct]
+    .ctor()
+    field OfflineSourceSeparationModelConfig Model
+
+### SherpaOnnx.OfflineSourceSeparationModelConfig : ValueType [struct]
+    .ctor()
+    field OfflineSourceSeparationSpleeterModelConfig Spleeter
+    field OfflineSourceSeparationUvrModelConfig Uvr
+    field Int32 NumThreads
+    field Int32 Debug
+    field String Provider
+
+### SherpaOnnx.OfflineSourceSeparationSpleeterModelConfig : ValueType [struct]
+    .ctor()
+    field String Vocals
+    field String Accompaniment
+
+### SherpaOnnx.OfflineSourceSeparationUvrModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+
+### SherpaOnnx.OfflineSpeakerDiarization : Object [class]
+    .ctor(OfflineSpeakerDiarizationConfig config)
+    prop Int32 SampleRate { get; }
+    method Void SetConfig(OfflineSpeakerDiarizationConfig config)
+    method OfflineSpeakerDiarizationSegment[] Process(Single[] samples)
+    method OfflineSpeakerDiarizationSegment[] ProcessWithCallback(Single[] samples, OfflineSpeakerDiarizationProgressCallback callback, IntPtr arg)
+    method Void Dispose()
+    method Int32 get_SampleRate()
+
+### SherpaOnnx.OfflineSpeakerDiarizationConfig : ValueType [struct]
+    .ctor()
+    field OfflineSpeakerSegmentationModelConfig Segmentation
+    field SpeakerEmbeddingExtractorConfig Embedding
+    field FastClusteringConfig Clustering
+    field Single MinDurationOn
+    field Single MinDurationOff
+
+### SherpaOnnx.OfflineSpeakerDiarizationProgressCallback : MulticastDelegate [class]
+    .ctor(Object object, IntPtr method)
+    prop Object Target { get; }
+    prop MethodInfo Method { get; }
+    method Int32 Invoke(Int32 numProcessedChunks, Int32 numTotalChunks, IntPtr arg)
+    method IAsyncResult BeginInvoke(Int32 numProcessedChunks, Int32 numTotalChunks, IntPtr arg, AsyncCallback callback, Object object)
+    method Int32 EndInvoke(IAsyncResult result)
+
+### SherpaOnnx.OfflineSpeakerDiarizationSegment : Object [class]
+    .ctor(IntPtr handle)
+    field Single Start
+    field Single End
+    field Int32 Speaker
+    field Single Confidence
+
+### SherpaOnnx.OfflineSpeakerSegmentationModelConfig : ValueType [struct]
+    .ctor()
+    field OfflineSpeakerSegmentationPyannoteModelConfig Pyannote
+    field Int32 NumThreads
+    field Int32 Debug
+    field String Provider
+
+### SherpaOnnx.OfflineSpeakerSegmentationPyannoteModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+    field Single WindowShiftRatio
+
+### SherpaOnnx.OfflineSpeechDenoiser : Object [class]
+    .ctor(OfflineSpeechDenoiserConfig config)
+    prop Int32 SampleRate { get; }
+    method DenoisedAudio Run(Single[] samples, Int32 sampleRate)
+    method Void Dispose()
+    method Int32 get_SampleRate()
+
+### SherpaOnnx.OfflineSpeechDenoiserConfig : ValueType [struct]
+    .ctor()
+    field OfflineSpeechDenoiserModelConfig Model
+
+### SherpaOnnx.OfflineSpeechDenoiserDpdfNetModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+    field Single AttenuationLimitDb
+
+### SherpaOnnx.OfflineSpeechDenoiserGtcrnModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+
+### SherpaOnnx.OfflineSpeechDenoiserModelConfig : ValueType [struct]
+    .ctor()
+    field OfflineSpeechDenoiserGtcrnModelConfig Gtcrn
+    field Int32 NumThreads
+    field Int32 Debug
+    field String Provider
+    field OfflineSpeechDenoiserDpdfNetModelConfig Dpdfnet
+
+### SherpaOnnx.OfflineStream : Object [class]
+    .ctor(IntPtr p)
+    prop OfflineRecognizerResult Result { get; }
+    prop IntPtr Handle { get; }
+    method Void AcceptWaveform(Int32 sampleRate, Single[] samples)
+    method Void SetOption(String key, String value)
+    method String GetOption(String key)
+    method Boolean HasOption(String key)
+    method OfflineRecognizerResult get_Result()
+    method Void Dispose()
+    method IntPtr get_Handle()
+
+### SherpaOnnx.OfflineTdnnModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+
+### SherpaOnnx.OfflineTransducerModelConfig : ValueType [struct]
+    .ctor()
+    field String Encoder
+    field String Decoder
+    field String Joiner
+
+### SherpaOnnx.OfflineTts : Object [class]
+    .ctor(OfflineTtsConfig config)
+    prop Int32 SampleRate { get; }
+    prop Int32 NumSpeakers { get; }
+    method OfflineTtsGeneratedAudio Generate(String text, Single speed, Int32 speakerId)
+    method OfflineTtsGeneratedAudio GenerateWithCallback(String text, Single speed, Int32 speakerId, OfflineTtsCallback callback)
+    method OfflineTtsGeneratedAudio GenerateWithCallbackProgress(String text, Single speed, Int32 speakerId, OfflineTtsCallbackProgress callback)
+    method OfflineTtsGeneratedAudio GenerateWithConfig(String text, OfflineTtsGenerationConfig config, OfflineTtsCallbackProgressWithArg callback)
+    method Void Dispose()
+    method Int32 get_SampleRate()
+    method Int32 get_NumSpeakers()
+
+### SherpaOnnx.OfflineTtsCallback : MulticastDelegate [class]
+    .ctor(Object object, IntPtr method)
+    prop Object Target { get; }
+    prop MethodInfo Method { get; }
+    method Int32 Invoke(IntPtr samples, Int32 n)
+    method IAsyncResult BeginInvoke(IntPtr samples, Int32 n, AsyncCallback callback, Object object)
+    method Int32 EndInvoke(IAsyncResult result)
+
+### SherpaOnnx.OfflineTtsCallbackProgress : MulticastDelegate [class]
+    .ctor(Object object, IntPtr method)
+    prop Object Target { get; }
+    prop MethodInfo Method { get; }
+    method Int32 Invoke(IntPtr samples, Int32 n, Single progress)
+    method IAsyncResult BeginInvoke(IntPtr samples, Int32 n, Single progress, AsyncCallback callback, Object object)
+    method Int32 EndInvoke(IAsyncResult result)
+
+### SherpaOnnx.OfflineTtsCallbackProgressWithArg : MulticastDelegate [class]
+    .ctor(Object object, IntPtr method)
+    prop Object Target { get; }
+    prop MethodInfo Method { get; }
+    method Int32 Invoke(IntPtr samples, Int32 n, Single progress, IntPtr arg)
+    method IAsyncResult BeginInvoke(IntPtr samples, Int32 n, Single progress, IntPtr arg, AsyncCallback callback, Object object)
+    method Int32 EndInvoke(IAsyncResult result)
+
+### SherpaOnnx.OfflineTtsConfig : ValueType [struct]
+    .ctor()
+    field OfflineTtsModelConfig Model
+    field String RuleFsts
+    field Int32 MaxNumSentences
+    field String RuleFars
+    field Single SilenceScale
+
+### SherpaOnnx.OfflineTtsGeneratedAudio : Object [class]
+    .ctor(IntPtr p)
+    prop IntPtr Handle { get; }
+    prop Int32 NumSamples { get; }
+    prop Int32 SampleRate { get; }
+    prop Single[] Samples { get; }
+    method Boolean SaveToWaveFile(String filename)
+    method Void Dispose()
+    method IntPtr get_Handle()
+    method Int32 get_NumSamples()
+    method Int32 get_SampleRate()
+    method Single[] get_Samples()
+
+### SherpaOnnx.OfflineTtsGenerationConfig : Object [class]
+    .ctor()
+    field Single SilenceScale
+    field Single Speed
+    field Int32 Sid
+    field Single[] ReferenceAudio
+    field Int32 ReferenceSampleRate
+    field String ReferenceText
+    field Int32 NumSteps
+    field Hashtable Extra
+
+### SherpaOnnx.OfflineTtsKittenModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+    field String Voices
+    field String Tokens
+    field String DataDir
+    field Single LengthScale
+
+### SherpaOnnx.OfflineTtsKokoroModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+    field String Voices
+    field String Tokens
+    field String DataDir
+    field Single LengthScale
+    field String DictDir
+    field String Lexicon
+    field String Lang
+
+### SherpaOnnx.OfflineTtsMatchaModelConfig : ValueType [struct]
+    .ctor()
+    field String AcousticModel
+    field String Vocoder
+    field String Lexicon
+    field String Tokens
+    field String DataDir
+    field Single NoiseScale
+    field Single LengthScale
+    field String DictDir
+
+### SherpaOnnx.OfflineTtsModelConfig : ValueType [struct]
+    .ctor()
+    field OfflineTtsVitsModelConfig Vits
+    field Int32 NumThreads
+    field Int32 Debug
+    field String Provider
+    field OfflineTtsMatchaModelConfig Matcha
+    field OfflineTtsKokoroModelConfig Kokoro
+    field OfflineTtsKittenModelConfig Kitten
+    field OfflineTtsZipVoiceModelConfig ZipVoice
+    field OfflineTtsPocketModelConfig Pocket
+    field OfflineTtsSupertonicModelConfig Supertonic
+
+### SherpaOnnx.OfflineTtsPocketModelConfig : ValueType [struct]
+    .ctor()
+    field String LmFlow
+    field String LmMain
+    field String Encoder
+    field String Decoder
+    field String TextConditioner
+    field String VocabJson
+    field String TokenScoresJson
+    field Int32 VoiceEmbeddingCacheCapacity
+
+### SherpaOnnx.OfflineTtsSupertonicModelConfig : ValueType [struct]
+    .ctor()
+    field String DurationPredictor
+    field String TextEncoder
+    field String VectorEstimator
+    field String Vocoder
+    field String TtsJson
+    field String UnicodeIndexer
+    field String VoiceStyle
+
+### SherpaOnnx.OfflineTtsVitsModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+    field String Lexicon
+    field String Tokens
+    field String DataDir
+    field Single NoiseScale
+    field Single NoiseScaleW
+    field Single LengthScale
+    field String DictDir
+
+### SherpaOnnx.OfflineTtsZipVoiceModelConfig : ValueType [struct]
+    .ctor()
+    field String Tokens
+    field String Encoder
+    field String Decoder
+    field String Vocoder
+    field String DataDir
+    field String Lexicon
+    field Single FeatScale
+    field Single Tshift
+    field Single TargetRms
+    field Single GuidanceScale
+
+### SherpaOnnx.OfflineWenetCtcModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+
+### SherpaOnnx.OfflineWhisperModelConfig : ValueType [struct]
+    .ctor()
+    field String Encoder
+    field String Decoder
+    field String Language
+    field String Task
+    field Int32 TailPaddings
+    field Int32 EnableTokenTimestamps
+    field Int32 EnableSegmentTimestamps
+
+### SherpaOnnx.OfflineZipformerAudioTaggingModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+
+### SherpaOnnx.OfflineZipformerCtcModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+
+### SherpaOnnx.OnlineCtcFstDecoderConfig : ValueType [struct]
+    .ctor()
+    field String Graph
+    field Int32 MaxActive
+
+### SherpaOnnx.OnlineModelConfig : ValueType [struct]
+    .ctor()
+    field OnlineTransducerModelConfig Transducer
+    field OnlineParaformerModelConfig Paraformer
+    field OnlineZipformer2CtcModelConfig Zipformer2Ctc
+    field String Tokens
+    field Int32 NumThreads
+    field String Provider
+    field Int32 Debug
+    field String ModelType
+    field String ModelingUnit
+    field String BpeVocab
+    field String TokensBuf
+    field Int32 TokensBufSize
+    field OnlineNemoCtcModelConfig NemoCtc
+    field OnlineToneCtcModelConfig ToneCtc
+
+### SherpaOnnx.OnlineNemoCtcModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+
+### SherpaOnnx.OnlineParaformerModelConfig : ValueType [struct]
+    .ctor()
+    field String Encoder
+    field String Decoder
+
+### SherpaOnnx.OnlinePunctuation : Object [class]
+    .ctor(OnlinePunctuationConfig config)
+    method String AddPunct(String text)
+    method Void Dispose()
+
+### SherpaOnnx.OnlinePunctuationConfig : ValueType [struct]
+    .ctor()
+    field OnlinePunctuationModelConfig Model
+
+### SherpaOnnx.OnlinePunctuationModelConfig : ValueType [struct]
+    .ctor()
+    field String CnnBiLstm
+    field String BpeVocab
+    field Int32 NumThreads
+    field Int32 Debug
+    field String Provider
+
+### SherpaOnnx.OnlineRecognizer : Object [class]
+    .ctor(OnlineRecognizerConfig config)
+    method OnlineStream CreateStream()
+    method Boolean IsReady(OnlineStream stream)
+    method Boolean IsEndpoint(OnlineStream stream)
+    method Void Decode(OnlineStream stream)
+    method Void Decode(IEnumerable`1 streams)
+    method OnlineRecognizerResult GetResult(OnlineStream stream)
+    method Void Reset(OnlineStream stream)
+    method Void Dispose()
+
+### SherpaOnnx.OnlineRecognizerConfig : ValueType [struct]
+    .ctor()
+    field FeatureConfig FeatConfig
+    field OnlineModelConfig ModelConfig
+    field String DecodingMethod
+    field Int32 MaxActivePaths
+    field Int32 EnableEndpoint
+    field Single Rule1MinTrailingSilence
+    field Single Rule2MinTrailingSilence
+    field Single Rule3MinUtteranceLength
+    field String HotwordsFile
+    field Single HotwordsScore
+    field OnlineCtcFstDecoderConfig CtcFstDecoderConfig
+    field String RuleFsts
+    field String RuleFars
+    field Single BlankPenalty
+    field String HotwordsBuf
+    field Int32 HotwordsBufSize
+    field HomophoneReplacerConfig Hr
+
+### SherpaOnnx.OnlineRecognizerResult : Object [class]
+    .ctor(IntPtr handle)
+    prop String Text { get; }
+    prop String[] Tokens { get; }
+    prop Single[] Timestamps { get; }
+    method String get_Text()
+    method String[] get_Tokens()
+    method Single[] get_Timestamps()
+
+### SherpaOnnx.OnlineSpeechDenoiser : Object [class]
+    .ctor(OnlineSpeechDenoiserConfig config)
+    prop Int32 SampleRate { get; }
+    prop Int32 FrameShiftInSamples { get; }
+    method DenoisedAudio Run(Single[] samples, Int32 sampleRate)
+    method DenoisedAudio Flush()
+    method Void Reset()
+    method Void Dispose()
+    method Int32 get_SampleRate()
+    method Int32 get_FrameShiftInSamples()
+
+### SherpaOnnx.OnlineSpeechDenoiserConfig : ValueType [struct]
+    .ctor()
+    field OfflineSpeechDenoiserModelConfig Model
+
+### SherpaOnnx.OnlineStream : Object [class]
+    .ctor(IntPtr p)
+    prop IntPtr Handle { get; }
+    method Void AcceptWaveform(Int32 sampleRate, Single[] samples)
+    method Void InputFinished()
+    method Void SetOption(String key, String value)
+    method String GetOption(String key)
+    method Boolean HasOption(String key)
+    method Void Dispose()
+    method IntPtr get_Handle()
+
+### SherpaOnnx.OnlineToneCtcModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+
+### SherpaOnnx.OnlineTransducerModelConfig : ValueType [struct]
+    .ctor()
+    field String Encoder
+    field String Decoder
+    field String Joiner
+
+### SherpaOnnx.OnlineZipformer2CtcModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+
+### SherpaOnnx.SileroVadModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+    field Single Threshold
+    field Single MinSilenceDuration
+    field Single MinSpeechDuration
+    field Int32 WindowSize
+    field Single MaxSpeechDuration
+
+### SherpaOnnx.SourceSeparationOutput : Object [class]
+    .ctor(IntPtr p)
+    prop Int32 SampleRate { get; }
+    prop Int32 NumStems { get; }
+    prop IntPtr Handle { get; }
+    method Int32 get_SampleRate()
+    method Int32 get_NumStems()
+    method Single[][] GetStemSamples(Int32 stemIndex)
+    method Boolean SaveStemToWaveFile(Int32 stemIndex, String filename)
+    method Void Dispose()
+    method IntPtr get_Handle()
+
+### SherpaOnnx.SpeakerEmbeddingExtractor : Object [class]
+    .ctor(SpeakerEmbeddingExtractorConfig config)
+    prop Int32 Dim { get; }
+    method OnlineStream CreateStream()
+    method Boolean IsReady(OnlineStream stream)
+    method Single[] Compute(OnlineStream stream)
+    method Int32 get_Dim()
+    method Void Dispose()
+
+### SherpaOnnx.SpeakerEmbeddingExtractorConfig : ValueType [struct]
+    .ctor()
+    field String Model
+    field Int32 NumThreads
+    field Int32 Debug
+    field String Provider
+
+### SherpaOnnx.SpeakerEmbeddingManager : Object [class]
+    .ctor(Int32 dim)
+    prop Int32 NumSpeakers { get; }
+    method Boolean Add(String name, Single[] v)
+    method Boolean Add(String name, ICollection`1 v_list)
+    method Boolean Remove(String name)
+    method String Search(Single[] v, Single threshold)
+    method Boolean Verify(String name, Single[] v, Single threshold)
+    method Boolean Contains(String name)
+    method String[] GetAllSpeakers()
+    method Void Dispose()
+    method Int32 get_NumSpeakers()
+
+### SherpaOnnx.SpeechSegment : Object [class]
+    .ctor(IntPtr handle)
+    field Int32 _start
+    prop Int32 Start { get; }
+    prop Single[] Samples { get; }
+    method Int32 get_Start()
+    method Single[] get_Samples()
+
+### SherpaOnnx.SpokenLanguageIdentification : Object [class]
+    .ctor(SpokenLanguageIdentificationConfig config)
+    method OfflineStream CreateStream()
+    method SpokenLanguageIdentificationResult Compute(OfflineStream stream)
+    method Void Dispose()
+
+### SherpaOnnx.SpokenLanguageIdentificationConfig : ValueType [struct]
+    .ctor()
+    field SpokenLanguageIdentificationWhisperConfig Whisper
+    field Int32 NumThreads
+    field Int32 Debug
+    field String Provider
+
+### SherpaOnnx.SpokenLanguageIdentificationResult : Object [class]
+    .ctor(IntPtr handle)
+    prop String Lang { get; }
+    method String get_Lang()
+
+### SherpaOnnx.SpokenLanguageIdentificationWhisperConfig : ValueType [struct]
+    .ctor()
+    field String Encoder
+    field String Decoder
+    field Int32 TailPaddings
+
+### SherpaOnnx.TenVadModelConfig : ValueType [struct]
+    .ctor()
+    field String Model
+    field Single Threshold
+    field Single MinSilenceDuration
+    field Single MinSpeechDuration
+    field Int32 WindowSize
+    field Single MaxSpeechDuration
+
+### SherpaOnnx.VadModelConfig : ValueType [struct]
+    .ctor()
+    field SileroVadModelConfig SileroVad
+    field Int32 SampleRate
+    field Int32 NumThreads
+    field String Provider
+    field Int32 Debug
+    field TenVadModelConfig TenVad
+
+### SherpaOnnx.VersionInfo : Object [class]
+    .ctor()
+    prop String Version { get; }
+    prop String GitSha1 { get; }
+    prop String GitDate { get; }
+    prop String OnnxruntimeVersion { get; }
+    method String get_Version()
+    method String get_GitSha1()
+    method String get_GitDate()
+    method String get_OnnxruntimeVersion()
+
+### SherpaOnnx.VoiceActivityDetector : Object [class]
+    .ctor(VadModelConfig config, Single bufferSizeInSeconds)
+    method Void AcceptWaveform(Single[] samples)
+    method Boolean IsEmpty()
+    method Boolean IsSpeechDetected()
+    method Void Pop()
+    method SpeechSegment Front()
+    method Void Clear()
+    method Void Reset()
+    method Void Flush()
+    method Void Dispose()
+

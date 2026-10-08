@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>AudioCaptureProbe</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\LocalMeetingSubtitle.Core\LocalMeetingSubtitle.Core.csproj" />
+    <ProjectReference Include="..\..\src\LocalMeetingSubtitle.Audio\LocalMeetingSubtitle.Audio.csproj" />
+  </ItemGroup>
+
+</Project>
