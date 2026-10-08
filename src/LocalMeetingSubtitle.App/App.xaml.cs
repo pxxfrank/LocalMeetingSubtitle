@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using LocalMeetingSubtitle.App.Infrastructure;
@@ -124,6 +125,25 @@ public partial class App : Application
             _logger!);
     }
 
+    /// <summary>
+    /// Resolves the directory that holds ASR models. A portable ZIP ships its models in
+    /// <c>&lt;app&gt;\models</c>, so that location wins when present; otherwise the per-user
+    /// <c>%LOCALAPPDATA%</c> models directory is used (and is where downloads are written).
+    /// </summary>
+    private static string ResolveModelsRoot(FileLogger logger)
+    {
+        var portable = Path.Combine(AppContext.BaseDirectory, "models");
+        if (Directory.Exists(portable) && Directory.EnumerateDirectories(portable).Any())
+        {
+            logger.Info($"Using portable models directory: {portable}");
+            return portable;
+        }
+
+        var user = LocalDataPaths.EnsureModelsDirectory();
+        logger.Info($"Using user models directory: {user}");
+        return user;
+    }
+
     private static ServiceProvider BuildServices(FileLogger logger)
     {
         var services = new ServiceCollection();
@@ -144,7 +164,7 @@ public partial class App : Application
 
         // The model manager is used offline (installed-model checks); recognition itself never
         // touches the network.
-        services.AddSingleton<IModelManager>(_ => new HttpModelManager(LocalDataPaths.EnsureModelsDirectory()));
+        services.AddSingleton<IModelManager>(_ => new HttpModelManager(ResolveModelsRoot(logger)));
 
         // Lazy factory: each call constructs a fresh recognition engine.
         services.AddSingleton<Func<IAsrEngine>>(sp => () => new SherpaOnnxAsrEngine(sp.GetRequiredService<IAppLogger>()));

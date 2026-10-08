@@ -1,0 +1,98 @@
+# Known Issues
+
+This file lists defects found and fixed during development, open (non-blocking) limitations, and
+items that could not be verified on the available hardware.
+
+**There are no open P0 defects.** Everything below is either already fixed, or a P3 (minor /
+documentation-level) limitation, or an item blocked purely by the absence of the target hardware.
+
+## Summary
+
+| ID | Kind | Severity | Status |
+| --- | --- | --- | --- |
+| P1 | `StreamingResampler` emitted zero samples | High (was P1) | **FIXED** + regression tests |
+| P2 | `MockAsrEngine` streaming could spin forever | Medium (test-only) | **FIXED** |
+| P3-1 | Subtitle selection is row-level, not character-level | Low | Open |
+| P3-2 | `AppSettings.EnableVadSegmenting` persisted but not wired | Low | Open |
+| P3-3 | `AsrNumThreads` applies at next Start / engine swap, not live | Low | Open |
+| P3-4 | Hotword editing UI is a one-line-per-hotword text box | Low | Open |
+| P3-5 | Floating-window resize not interactively verified | Low | Open |
+| BLOCKED-1 | Full Start→transcribe→persist UI path not exercised | P0 (target) | Blocked (no real audio; model not installed in app data dir) |
+| BLOCKED-2 | No real-meeting 3-hour stability run | P0 (target) | Blocked (`ThreeHourSoak` never executed) |
+| BLOCKED-3 | No code-signed installer | P1 (release) | Blocked (only portable ZIP produced) |
+
+## Fixed defects
+
+### P1 — `StreamingResampler` emitted zero samples *(FIXED)*
+
+- **Symptom:** the windowed-sinc resampler produced no output samples, which would have meant silent
+  recognition. Found by the unit/perf tests (the resampler test also asserts a non-zero sample count:
+  "a resampler that produces no samples is not ‘fast', it is broken").
+- **Root cause:** the read position warm-up guard rejected the first outputs (the kernel requires
+  samples on both sides of the centre, so the very first blocks had no valid centre).
+- **Fix:** prime the internal buffer with `HalfTaps` zero samples and start the read position at
+  `HalfTaps`, so the first real sample lands on the kernel centre and no negative index is required.
+- **Verification:** regression tests now pass (`StreamingResamplerTests`, `ResamplerThroughputTests`).
+
+### P2 — `MockAsrEngine` streaming could spin forever *(FIXED)*
+
+- **Symptom:** the streaming scripted test double reported `IsReady()` as always true, so the pipeline
+  loop could decode without bound (a test-infrastructure hang).
+- **Fix:** the mock now consumes exactly one scripted hypothesis per accepted buffer
+  (`AcceptWaveform` sets ready once; `Decode` clears it), mimicking a real streaming engine.
+- **Verification:** pipeline long-run tests complete deterministically.
+
+## Open limitations (P3 — minor)
+
+### P3-1 — Subtitle selection is row-level, not character-level
+
+- **Impact:** the transcript is a `ListBox`; users can select whole rows (`SelectionMode="Extended"`)
+  and copy them, but cannot select individual characters/words within a line.
+- **Workaround:** copy the whole row (Copy button) or export to TXT/SRT/Markdown.
+
+### P3-2 — `AppSettings.EnableVadSegmenting` is persisted but not wired
+
+- **Impact:** the setting round-trips through the settings store and UI but does not currently change
+  segmentation behaviour (offline segmentation uses `AudioSegmenter` defaults).
+- **Workaround:** none needed; it has no effect on streaming models.
+
+### P3-3 — `AsrNumThreads` applies at next Start / engine swap, not live
+
+- **Impact:** changing the ASR thread count while transcribing does not take effect until the next
+  Start or hotword-driven engine swap.
+- **Workaround:** Stop then Start, or re-apply hotwords, to pick up the new value.
+
+### P3-4 — Hotword editing UI is a simple one-line-per-hotword text box
+
+- **Impact:** hotwords are edited as plain lines (one hotword per line) with a fixed score; there is
+  no dedicated hotword manager (groups / per-entry enable / per-entry score UI).
+- **Workaround:** edit the text box; the underlying `hotwords` / `hotword_groups` schema supports
+  richer data for future UI.
+
+### P3-5 — Floating-window resize not interactively verified
+
+- **Impact:** the floating subtitle window's always-on-top, click-through and restore behaviour are
+  implemented and code-verified, but interactive resize was not manually verified on-screen.
+- **Workaround:** adjust font size / opacity from Settings.
+
+## Blocked / NOT_TESTED items
+
+### BLOCKED-1 — Full Start → transcribe → persist path not exercised in the UI
+
+- **Why:** no real meeting audio was available on the dev host, and the model was **intentionally not
+  installed** in the application's data directory (`%LOCALAPPDATA%\LocalMeetingSubtitle\models`), so
+  the UI Start button is correctly disabled (no fake output is produced).
+- **Status:** each layer is tested separately (audio capture probe, decode benchmark, pipeline tests,
+  persistence tests), but the integrated UI path is **BLOCKED / NOT_TESTED** at the UI level.
+- **Impact:** high (it is the core user flow) — must be closed on the target hardware.
+
+### BLOCKED-2 — No real-meeting 3-hour stability run
+
+- **Why:** `ThreeHourSoak` requires ~3 hours of wall-clock time and was never executed.
+- **Status:** **NOT_TESTED**. The 10-minute scripted pipeline run passed, but that is not a substitute.
+
+### BLOCKED-3 — No code-signed installer
+
+- **Why:** only the portable, self-contained ZIP (`dist/LocalMeetingSubtitle-win-x64/`) was produced.
+- **Status:** **NOT_TESTED**. **Do not claim the release is signed.** Code signing is optional and
+  would need a certificate, if desired.
