@@ -1,12 +1,160 @@
-﻿<Window x:Class="LocalMeetingSubtitle.App.MainWindow"
+<Window x:Class="LocalMeetingSubtitle.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:LocalMeetingSubtitle.App"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
-    <Grid>
+        Title="LocalMeetingSubtitle 本地会议字幕"
+        Height="640" Width="940" MinHeight="420" MinWidth="640"
+        FontFamily="Microsoft YaHei UI">
+    <DockPanel>
 
-    </Grid>
+        <!-- ================= Top bar ================= -->
+        <Border DockPanel.Dock="Top" Background="{StaticResource AppPanelBrush}" Padding="12,10">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <DockPanel Grid.Row="0">
+                    <TextBlock DockPanel.Dock="Left" Text="LocalMeetingSubtitle"
+                               FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource AppAccentBrush}" />
+                    <TextBlock DockPanel.Dock="Right" HorizontalAlignment="Right"
+                               Text="{Binding StateText}" FontWeight="SemiBold" />
+                </DockPanel>
+
+                <TextBlock Grid.Row="1" Margin="0,4,0,0" Text="{Binding StatusText}"
+                           TextTrimming="CharacterEllipsis" Foreground="#444" />
+
+                <WrapPanel Grid.Row="2" Margin="0,8,0,0" Orientation="Horizontal">
+                    <TextBlock Text="音频设备 / Device:" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <ComboBox Width="260" ItemsSource="{Binding Devices}"
+                              SelectedItem="{Binding SelectedDevice}"
+                              DisplayMemberPath="FriendlyName"
+                              IsEnabled="{Binding CanChangeDevice}"
+                              Margin="0,0,6,0" />
+                    <Button Content="刷新 / Refresh" Command="{Binding RefreshDevicesCommand}"
+                            Padding="8,2" Margin="0,0,16,0" />
+
+                    <TextBlock Text="模型 / Model:" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBlock VerticalAlignment="Center" Margin="0,0,16,0">
+                        <Run Text="{Binding ModelName, Mode=OneWay}" />
+                        <Run Text="(" /><Run Text="{Binding ModelStatusText, Mode=OneWay}" /><Run Text=")" />
+                    </TextBlock>
+
+                    <TextBlock Text="延迟 / Latency:" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBlock Text="{Binding LatencyText}" VerticalAlignment="Center" Width="70" Margin="0,0,16,0" />
+
+                    <TextBlock Text="热词 / Hotwords:" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBlock Text="{Binding HotwordModeText}" VerticalAlignment="Center"
+                               ToolTip="{Binding HotwordDetailText}"
+                               Cursor="Help" />
+                </WrapPanel>
+            </Grid>
+        </Border>
+
+        <!-- ================= Warning banner (non-modal) ================= -->
+        <Border DockPanel.Dock="Top" Background="{StaticResource AppWarningBrush}"
+                BorderBrush="{StaticResource AppWarningBorderBrush}" BorderThickness="0,1,0,1"
+                Padding="12,8"
+                Visibility="{Binding HasWarning, Converter={StaticResource BoolToVis}}">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="✕" Command="{Binding DismissWarningCommand}"
+                        Padding="8,0" Margin="8,0,0,0" />
+                <TextBlock Text="{Binding WarningMessage}" TextWrapping="Wrap" Foreground="#5A4A00" />
+            </DockPanel>
+        </Border>
+
+        <!-- ================= Bottom bar ================= -->
+        <Border DockPanel.Dock="Bottom" Background="{StaticResource AppPanelBrush}" Padding="12,8">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="音量 / Level:" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <ProgressBar Width="140" Height="12" Minimum="0" Maximum="1" Value="{Binding Level, Mode=OneWay}"
+                                 Foreground="{StaticResource AppAccentBrush}" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <WrapPanel Orientation="Horizontal">
+                    <Button Content="开始 / Start" Command="{Binding StartCommand}" Padding="10,4" Margin="0,0,6,0" />
+                    <Button Content="暂停 / Pause" Command="{Binding PauseCommand}" Padding="10,4" Margin="0,0,6,0" />
+                    <Button Content="继续 / Resume" Command="{Binding ResumeCommand}" Padding="10,4" Margin="0,0,6,0" />
+                    <Button Content="停止 / Stop" Command="{Binding StopCommand}" Padding="10,4" Margin="0,0,6,0" />
+                    <Button Content="搜索 / Search" Command="{Binding ToggleSearchCommand}" Padding="10,4" Margin="0,0,6,0" />
+                    <Button Content="导出 / Export" Command="{Binding ExportCommand}" Padding="10,4" Margin="0,0,6,0" />
+                    <Button Content="设置 / Settings" Command="{Binding OpenSettingsCommand}" Padding="10,4" Margin="0,0,6,0" />
+                    <Button Content="悬浮字幕 / Floating" Command="{Binding ToggleFloatingCommand}" Padding="10,4" Margin="0,0,6,0" />
+                    <Button Content="复制 / Copy" Click="OnCopyClick" Padding="10,4" />
+                </WrapPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- ================= Search bar ================= -->
+        <Border DockPanel.Dock="Top" Padding="12,6" Background="#FFFFFF"
+                Visibility="{Binding IsSearchVisible, Converter={StaticResource BoolToVis}}">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Left" Text="查找 / Find:" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <TextBlock DockPanel.Dock="Right" Text="{Binding MatchText}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=120}" Padding="4,2" />
+            </DockPanel>
+        </Border>
+
+        <!-- ================= Subtitle stream ================= -->
+        <Grid>
+            <ListBox x:Name="SubtitleList"
+                     ItemsSource="{Binding Lines}"
+                     SelectionMode="Extended"
+                     FontFamily="{Binding SubtitleFontFamily}"
+                     FontSize="{Binding SubtitleFontSize}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     VirtualizingPanel.IsVirtualizing="True"
+                     BorderThickness="0"
+                     Background="White"
+                     Padding="6">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Padding" Value="2,2" />
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Border x:Name="RowBg" Padding="4,2" CornerRadius="3">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="Ts" Grid.Column="0" Text="{Binding Timestamp}"
+                                           Foreground="#8A8A8A" FontFamily="Consolas" Margin="0,0,8,0"
+                                           VerticalAlignment="Top" />
+                                <TextBlock x:Name="Body" Grid.Column="1" Text="{Binding Text}" TextWrapping="Wrap" />
+                            </Grid>
+                        </Border>
+                        <DataTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsPartial}" Value="True">
+                                <Setter TargetName="Body" Property="TextBlock.FontStyle" Value="Italic" />
+                                <Setter TargetName="Body" Property="TextBlock.Foreground" Value="#9A9A9A" />
+                                <Setter TargetName="Ts" Property="TextBlock.FontStyle" Value="Italic" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsMatch}" Value="True">
+                                <Setter TargetName="RowBg" Property="Border.Background" Value="#FFF3B0" />
+                            </DataTrigger>
+                        </DataTemplate.Triggers>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <Button x:Name="ReturnToLatestButton"
+                    Content="↓ 返回最新字幕 / Return to latest"
+                    Command="{Binding ReturnToLatestCommand}"
+                    HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                    Margin="0,0,0,16" Padding="12,6"
+                    Background="{StaticResource AppAccentBrush}" Foreground="White" BorderThickness="0"
+                    Visibility="{Binding ShowReturnToLatest, Converter={StaticResource BoolToVis}}" />
+        </Grid>
+
+    </DockPanel>
 </Window>

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LocalMeetingSubtitle.Core\LocalMeetingSubtitle.Core.csproj" />
+    <ProjectReference Include="..\LocalMeetingSubtitle.Asr\LocalMeetingSubtitle.Asr.csproj" />
+  </ItemGroup>
+
+</Project>

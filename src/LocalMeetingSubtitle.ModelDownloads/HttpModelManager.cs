@@ -1,11 +1,13 @@
+using LocalMeetingSubtitle.Asr;
 using LocalMeetingSubtitle.Core.Abstractions;
 using LocalMeetingSubtitle.Core.Models;
 
-namespace LocalMeetingSubtitle.Asr;
+namespace LocalMeetingSubtitle.ModelDownloads;
 
 /// <summary>
-/// Downloads model files from their declared sources. Used only at development/installation time
-/// (the ModelManager tool and first-run setup). Recognition itself never touches the network.
+/// Downloads model files from their declared sources. Deliberately isolated in its own assembly
+/// so the runtime ASR/Core/Audio/Storage assemblies have NO network references: recognition is
+/// provably offline. Only used by the ModelManager tool and the app's optional setup screen.
 /// </summary>
 public sealed class HttpModelManager : IModelManager
 {

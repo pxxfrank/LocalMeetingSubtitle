@@ -44,18 +44,24 @@ public sealed class MockAsrEngine : IAsrEngine
     {
         private readonly IReadOnlyList<AsrDecodeResult> _script;
         private int _index;
+        private bool _ready;
+        private AsrDecodeResult _current = new("", false);
 
         public ScriptedSession(IReadOnlyList<AsrDecodeResult> script) => _script = script;
 
-        public void AcceptWaveform(ReadOnlySpan<float> samples, int sampleRate) { }
-        public bool IsReady() => _index < _script.Count;
-        public void Decode() { }
+        // One scripted hypothesis is consumed per accepted chunk, mimicking a streaming engine
+        // that becomes ready exactly once per buffer (and never spinning forever).
+        public void AcceptWaveform(ReadOnlySpan<float> samples, int sampleRate) => _ready = _index < _script.Count;
+        public bool IsReady() => _ready;
 
-        public AsrDecodeResult GetResult()
+        public void Decode()
         {
-            if (_index >= _script.Count) return new AsrDecodeResult("", false);
-            return _script[_index++];
+            if (!_ready) return;
+            _current = _script[_index++];
+            _ready = false;
         }
+
+        public AsrDecodeResult GetResult() => _current;
 
         public void Reset() { }
         public void InputFinished() { }

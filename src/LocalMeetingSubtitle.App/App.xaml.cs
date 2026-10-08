@@ -1,13 +1,245 @@
-﻿using System.Configuration;
-using System.Data;
 using System.Windows;
+using System.Windows.Threading;
+using LocalMeetingSubtitle.App.Infrastructure;
+using LocalMeetingSubtitle.App.ViewModels;
+using LocalMeetingSubtitle.Asr;
+using LocalMeetingSubtitle.ModelDownloads;
+using LocalMeetingSubtitle.Audio;
+using LocalMeetingSubtitle.Core.Abstractions;
+using LocalMeetingSubtitle.Core.Hotwords;
+using LocalMeetingSubtitle.Diagnostics;
+using LocalMeetingSubtitle.Export;
+using LocalMeetingSubtitle.Storage;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace LocalMeetingSubtitle.App;
 
 /// <summary>
-/// Interaction logic for App.xaml
+/// Composition root. Builds the DI container, enforces single-instance, wires global exception
+/// handling and owns the shell (windows + tray icon). All transcript work lives in the
+/// view-models; this class only assembles and supervises them.
 /// </summary>
 public partial class App : Application
 {
-}
+    private const string MutexName = "Local\\LocalMeetingSubtitle.SingleInstance.v1";
 
+    private SingleInstanceGuard? _singleInstance;
+    private ServiceProvider? _services;
+    private FileLogger? _logger;
+    private ShellService? _shell;
+    private TrayIconController? _tray;
+    private MainViewModel? _mainViewModel;
+    private bool _exiting;
+
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        base.OnStartup(e);
+
+        try
+        {
+            LocalDataPaths.EnsureAllDirectories();
+        }
+        catch
+        {
+            // Never fail startup over directory creation; components fall back to temp paths.
+        }
+
+        _logger = new FileLogger(LocalDataPaths.EnsureLogsDirectory());
+        RegisterExceptionHandlers();
+
+        _singleInstance = new SingleInstanceGuard(MutexName);
+        if (!_singleInstance.IsPrimary)
+        {
+            _logger.Warn("A second instance attempted to start; exiting.");
+            MessageBox.Show(
+                "LocalMeetingSubtitle 已在运行。\nLocalMeetingSubtitle is already running.",
+                "LocalMeetingSubtitle", MessageBoxButton.OK, MessageBoxImage.Information);
+            Shutdown();
+            return;
+        }
+
+        _logger.Info($"=== LocalMeetingSubtitle starting (v{GetType().Assembly.GetName().Version}) ===");
+
+        try
+        {
+            _services = BuildServices(_logger);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error("Building the service container failed", ex);
+            MessageBox.Show("初始化失败 / Initialization failed:\n" + ex.Message,
+                "LocalMeetingSubtitle", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown();
+            return;
+        }
+
+        _shell = new ShellService(_logger, CreateSettingsViewModel, RequestExit,
+            (title, message) => _tray?.ShowBalloon(title, message));
+
+        _mainViewModel = new MainViewModel(
+            _shell,
+            _logger,
+            _services.GetRequiredService<ISubtitleRepository>(),
+            _services.GetRequiredService<IHotwordService>(),
+            _services.GetRequiredService<ISettingsRepository>(),
+            _services.GetRequiredService<IModelManager>(),
+            _services.GetRequiredService<ISubtitleExportService>(),
+            _services.GetRequiredService<IPerformanceMonitor>(),
+            _services.GetRequiredService<WasapiLoopbackCaptureService>(),
+            () => _services.GetRequiredService<Func<IAsrEngine>>()());
+        _shell.Attach(_mainViewModel);
+
+        _tray = new TrayIconController(_mainViewModel, _shell, _logger);
+
+        // Show the window immediately (in its "Preparing…" state) so the UI is never blank.
+        _shell.ShowMainWindow();
+        MainWindow = _shell.MainWindow;
+
+        _ = StartInitializationAsync();
+    }
+
+    private async Task StartInitializationAsync()
+    {
+        try
+        {
+            // Bring the schema up to date before any repository read/write.
+            await _services!.GetRequiredService<SqliteDatabase>().InitializeAsync().ConfigureAwait(true);
+            await _mainViewModel!.InitializeAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _logger?.Error("Startup initialization failed", ex);
+            MessageBox.Show("初始化失败 / Initialization failed:\n" + ex.Message,
+                "LocalMeetingSubtitle", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private SettingsViewModel CreateSettingsViewModel()
+    {
+        var services = _services!;
+        return new SettingsViewModel(
+            services.GetRequiredService<ISettingsRepository>(),
+            services.GetRequiredService<IHotwordRepository>(),
+            _mainViewModel!,
+            _logger!);
+    }
+
+    private static ServiceProvider BuildServices(FileLogger logger)
+    {
+        var services = new ServiceCollection();
+
+        services.AddSingleton<IAppLogger>(logger);
+        services.AddSingleton(new SqliteDatabase(LocalDataPaths.DatabaseFile));
+        services.AddSingleton<ISubtitleRepository>(sp => new SqliteSubtitleRepository(sp.GetRequiredService<SqliteDatabase>()));
+        services.AddSingleton<IHotwordRepository>(sp => new SqliteHotwordRepository(sp.GetRequiredService<SqliteDatabase>()));
+        services.AddSingleton<ISettingsRepository>(sp => new SqliteSettingsRepository(sp.GetRequiredService<SqliteDatabase>()));
+
+        services.AddSingleton<IHotwordService>(sp => new DefaultHotwordService(
+            sp.GetRequiredService<IHotwordRepository>(), engine: null, sp.GetRequiredService<IAppLogger>()));
+
+        services.AddSingleton<WasapiLoopbackCaptureService>(sp => new WasapiLoopbackCaptureService(sp.GetRequiredService<IAppLogger>()));
+        services.AddSingleton<IAudioCaptureService>(sp => sp.GetRequiredService<WasapiLoopbackCaptureService>());
+        services.AddSingleton<IPerformanceMonitor>(_ => new ProcessPerformanceMonitor());
+        services.AddSingleton<ISubtitleExportService>(_ => new SubtitleExportService());
+
+        // The model manager is used offline (installed-model checks); recognition itself never
+        // touches the network.
+        services.AddSingleton<IModelManager>(_ => new HttpModelManager(LocalDataPaths.EnsureModelsDirectory()));
+
+        // Lazy factory: each call constructs a fresh recognition engine.
+        services.AddSingleton<Func<IAsrEngine>>(sp => () => new SherpaOnnxAsrEngine(sp.GetRequiredService<IAppLogger>()));
+
+        return services.BuildServiceProvider();
+    }
+
+    private void RegisterExceptionHandlers()
+    {
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += OnAppDomainUnhandledException;
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            _logger?.Error("Unobserved task exception", args.Exception);
+            args.SetObserved();
+        };
+    }
+
+    private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+    {
+        _logger?.Error("Unhandled UI-thread exception", e.Exception);
+        try
+        {
+            MessageBox.Show("发生未处理错误 / Unhandled error:\n" + e.Exception.Message,
+                "LocalMeetingSubtitle", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        catch
+        {
+            // Ignore failures while reporting.
+        }
+        e.Handled = true; // Keep the app alive rather than dying silently.
+    }
+
+    private void OnAppDomainUnhandledException(object sender, UnhandledExceptionEventArgs e)
+    {
+        var ex = e.ExceptionObject as Exception;
+        _logger?.Error("Unhandled application exception", ex);
+        try
+        {
+            MessageBox.Show("发生严重错误 / Fatal error:\n" + (ex?.Message ?? e.ExceptionObject?.ToString()),
+                "LocalMeetingSubtitle", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        catch
+        {
+            // Ignore failures while reporting.
+        }
+    }
+
+    /// <summary>Graceful exit: stop transcription, then shut down on the UI thread.</summary>
+    private void RequestExit()
+    {
+        if (_exiting) return;
+        _exiting = true;
+
+        _ = ExitAsync();
+    }
+
+    private async Task ExitAsync()
+    {
+        try
+        {
+            if (_mainViewModel is not null)
+            {
+                await _mainViewModel.StopIfRunningAsync().ConfigureAwait(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.Error("Error while stopping before exit", ex);
+        }
+
+        try
+        {
+            Dispatcher.Invoke(() =>
+            {
+                // The main window cancels its Closing event (normal close = hide-to-tray), so we
+                // must explicitly allow it to close during an intentional shutdown.
+                if (MainWindow is LocalMeetingSubtitle.App.MainWindow main) main.AllowClose();
+                Shutdown();
+            });
+        }
+        catch
+        {
+            // If the dispatcher is already gone, nothing left to do.
+        }
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _logger?.Info("LocalMeetingSubtitle exiting.");
+
+        try { _tray?.Dispose(); } catch { /* ignore */ }
+        try { _services?.Dispose(); } catch { /* ignore */ }
+        try { _singleInstance?.Dispose(); } catch { /* ignore */ }
+
+        base.OnExit(e);
+    }
+}

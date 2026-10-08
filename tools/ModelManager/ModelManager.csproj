@@ -10,6 +10,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\LocalMeetingSubtitle.Core\LocalMeetingSubtitle.Core.csproj" />
+    <ProjectReference Include="..\..\src\LocalMeetingSubtitle.Asr\LocalMeetingSubtitle.Asr.csproj" />
+    <ProjectReference Include="..\..\src\LocalMeetingSubtitle.ModelDownloads\LocalMeetingSubtitle.ModelDownloads.csproj" />
   </ItemGroup>
 
 </Project>

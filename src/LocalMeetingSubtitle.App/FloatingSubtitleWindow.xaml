@@ -1,0 +1,42 @@
+<Window x:Class="LocalMeetingSubtitle.App.FloatingSubtitleWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:LocalMeetingSubtitle.App"
+        Title="LocalMeetingSubtitle Floating"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Topmost="True" ShowInTaskbar="False" ShowActivated="False" Focusable="False"
+        ResizeMode="CanResizeWithGrip" Width="760" Height="170" MinWidth="240" MinHeight="90"
+        FontFamily="Microsoft YaHei UI">
+    <Grid x:Name="RootGrid" MouseLeftButtonDown="OnDrag">
+        <Grid.ContextMenu>
+            <ContextMenu>
+                <MenuItem Header="关闭鼠标穿透 / Disable click-through" Click="OnDisableClickThrough" />
+                <MenuItem Header="隐藏悬浮字幕 / Hide" Click="OnHideFloating" />
+            </ContextMenu>
+        </Grid.ContextMenu>
+
+        <!-- Background is separate so the text stays fully opaque. -->
+        <Rectangle Fill="Black" RadiusX="8" RadiusY="8"
+                   Opacity="{Binding FloatingBackgroundOpacity}" />
+
+        <ItemsControl ItemsSource="{Binding FloatingLines}"
+                      IsHitTestVisible="False" Focusable="False"
+                      Margin="16,12,16,16"
+                      VerticalAlignment="Bottom"
+                      FontSize="{Binding FloatingFontSize}"
+                      Foreground="White">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock TextWrapping="Wrap" Margin="0,3">
+                        <Run Text="{Binding Timestamp}" Foreground="#AFC2D6" FontFamily="Consolas" />
+                        <Run Text="   " />
+                        <Run Text="{Binding Text}" />
+                    </TextBlock>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <ResizeGrip HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                    Opacity="0.4" Width="16" Height="16" Margin="0,0,2,2" />
+    </Grid>
+</Window>
