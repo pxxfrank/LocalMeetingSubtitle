@@ -26,6 +26,9 @@ data/
 logs/
 *.log
 
+# WiX generated component list (contains absolute paths; regenerated per machine)
+installer/GeneratedFiles.wxs
+
 # Secrets / local environment
 .env
 appsettings.local.json

@@ -130,3 +130,17 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
 - This materially strengthens **AC-20** (extract-and-run) and partially exercises the previously
   BLOCKED integrated path (engine + device selection + readiness), though a full live-meeting
   transcription run still requires real playback audio and is not yet done.
+
+## Update — installer + signing (2026-10-08)
+
+- Added `installer/` (WiX v4): `Product.wxs`, `generate-files-wxs.ps1` (emits one component per file),
+  `Bundle.wxs` (Burn bootstrapper), and `build-installer.ps1` (end-to-end, reproducible).
+- Produced and **signed** (self-signed cert, CurrentUser\My; the trust store was NOT modified):
+  - `dist/LocalMeetingSubtitle-Setup.msi` — per-user MSI (no admin), installs to
+    `%LOCALAPPDATA%\Programs\LocalMeetingSubtitle`, Start-menu shortcut, does not touch user data.
+  - `dist/LocalMeetingSubtitle-Setup.exe` — Burn bundle chaining the MSI.
+  - `dist/LocalMeetingSubtitle-win-x64/LocalMeetingSubtitle.exe` — the app exe.
+- Signature status is **untrusted** (self-signed) → SmartScreen will still warn. A trusted
+  signature requires a CA-issued OV/EV code-signing certificate, which was not available.
+- WiX v7 was rejected: it requires accepting the Open Source Maintenance Fee EULA, which must not be
+  accepted on the owner's behalf. WiX v4.0.6 (free) is used instead.

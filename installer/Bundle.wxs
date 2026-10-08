@@ -1,0 +1,21 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+
+  <!-- A thin Setup.exe (Burn bundle) that chains the per-user MSI. -->
+  <Bundle Name="LocalMeetingSubtitle"
+          Version="0.1.0"
+          Manufacturer="LocalMeetingSubtitle"
+          UpgradeCode="c1d2e3f4-5a6b-4c7d-8e9f-0a1b2c3d4e5f">
+
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication Theme="hyperlinkLicense"
+                                              LicenseUrl="https://github.com/pxxfrank/LocalMeetingSubtitle" />
+    </BootstrapperApplication>
+
+    <Chain>
+      <MsiPackage SourceFile="dist/LocalMeetingSubtitle-Setup.msi" Compressed="yes" Vital="yes" />
+    </Chain>
+
+  </Bundle>
+
+</Wix>
