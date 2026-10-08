@@ -32,6 +32,5 @@ Licenses were verified against the Hugging Face API; see [`MODEL_SELECTION.md`](
 
 ## Project license
 
-The project's own `LICENSE` file is currently a **placeholder** to be chosen by the repository owner.
-Until the owner selects a license, no license is granted for LocalMeetingSubtitle itself; the
-third-party components above remain governed by their own licenses.
+LocalMeetingSubtitle itself is released under the **MIT License** (see the root `LICENSE` file).
+The third-party components listed above remain governed by their own licenses.

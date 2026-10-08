@@ -91,7 +91,8 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj `
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | EN | ADR 风格架构决策 D1–D10 |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | EN | 开发环境搭建、构建/测试/发布命令、如何添加模型 |
 | [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) | **中文** | 面向用户的使用与排查指南 |
-| [`docs/THIRD-PARTY-NOTICES.md`](docs/THIRD-PARTY-NOTICES.md) | EN | 第三方组件许可与许可证占位说明 |
+| [`LICENSE`](LICENSE) | — | 项目许可证（MIT） |
+| [`docs/THIRD-PARTY-NOTICES.md`](docs/THIRD-PARTY-NOTICES.md) | EN | 第三方组件与模型许可说明 |
 | [`docs/SHERPA_CSHARP_API_DUMP.txt`](docs/SHERPA_CSHARP_API_DUMP.txt) | — | sherpa-onnx C# 程序集反射导出的原始 API 清单 |
 
 ## 离线保证 / Offline guarantee
