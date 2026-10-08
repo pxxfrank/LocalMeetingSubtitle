@@ -48,10 +48,10 @@ Write-Host "[1/4] Regenerating installer/GeneratedFiles.wxs ..."
 & "$PSScriptRoot/generate-files-wxs.ps1" -AppFiles $AppFiles -OutFile "installer/GeneratedFiles.wxs"
 
 Write-Host "[2/4] Building MSI ..."
-& wix build installer/Product.wxs installer/GeneratedFiles.wxs -o "dist/LocalMeetingSubtitle-Setup.msi"
+& wix build installer/Product.wxs installer/GeneratedFiles.wxs -arch x64 -o "dist/LocalMeetingSubtitle-Setup.msi"
 
 Write-Host "[3/4] Building Setup.exe (Burn bundle) ..."
-& wix build installer/Bundle.wxs -ext WixToolset.Bal.wixext -o "dist/LocalMeetingSubtitle-Setup.exe"
+& wix build installer/Bundle.wxs -arch x64 -ext WixToolset.Bal.wixext -o "dist/LocalMeetingSubtitle-Setup.exe"
 
 if ($CertThumbprint) {
     Write-Host "[4/4] Signing with certificate $CertThumbprint ..."

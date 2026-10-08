@@ -163,3 +163,19 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
 - One UI bug found and fixed during the restyle: `MaterialDesignVerticalSeparator` does not exist in
   5.3.2 (would have thrown at window load) — replaced with a plain divider.
 - Third-party notices updated with the two new MIT-licensed UI packages.
+
+## Update — installer defect fixed; v0.2.0 assets replaced (2026-10-08)
+
+- **P1 (release-blocking) found and fixed:** the MSI/Burn installer reported success but installed a
+  broken app — `models\` was lost (so the ASR model was never found) and 238 files (the 12 localized
+  resource folders + subfolders) were silently dropped, because the WiX source generator flattened
+  every file into `INSTALLFOLDER`.
+- Fixed by rebuilding `generator/…`: `installer/generate-files-wxs.ps1` now emits the **complete nested
+  directory tree** (all ancestor prefixes) and places each component in its real folder. The MSI is also
+  built with `-arch x64` now (it was being produced as a 32-bit package).
+- **Re-verified end-to-end:** silent install → diff vs publish → **519 / 519 files, 0 missing**;
+  `models\…\encoder…onnx`, `docs\USER_GUIDE.md`, `ja\…resources.dll`, `Run-LocalMeetingSubtitle.cmd`
+  all present; Start-menu shortcut created; the installed app logs
+  `model=streaming-zipformer-zh-14M installed=True, devices=1`.
+- The portable **ZIP was never affected**; only the MSI/Bundle were broken — both have been rebuilt and
+  re-signed, and the GitHub release assets were replaced.

@@ -12,6 +12,8 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 | --- | --- | --- | --- |
 | P1 | `StreamingResampler` emitted zero samples | High (was P1) | **FIXED** + regression tests |
 | P2 | `MockAsrEngine` streaming could spin forever | Medium (test-only) | **FIXED** |
+| P1 | Installer flattened the folder tree (`models\` lost, 238 files silently dropped) | High (release) | **FIXED** + re-verified 519/519 files |
+| P2 | `MaterialDesignVerticalSeparator` does not exist in MaterialDesignThemes 5.3.2 | Medium (UI) | **FIXED** |
 | P3-1 | Subtitle selection is row-level, not character-level | Low | Open |
 | P3-2 | `AppSettings.EnableVadSegmenting` persisted but not wired | Low | Open |
 | P3-3 | `AsrNumThreads` applies at next Start / engine swap, not live | Low | Open |
@@ -19,9 +21,34 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 | P3-5 | Floating-window resize not interactively verified | Low | Open |
 | BLOCKED-1 | Full Start→transcribe→persist UI path not exercised | P0 (target) | Blocked (no real audio; model not installed in app data dir) |
 | BLOCKED-2 | No real-meeting 3-hour stability run | P0 (target) | Blocked (`ThreeHourSoak` never executed) |
-| BLOCKED-3 | No code-signed installer | P1 (release) | Blocked (only portable ZIP produced) |
+| BLOCKED-3 | Installer signature is self-signed / untrusted | P1 (release) | Partial (MSI + Setup.exe produced & signed; no CA-issued certificate) |
 
 ## Fixed defects
+
+### P1 — Installer flattened the folder tree *(FIXED)*
+
+- **Symptom:** `LocalMeetingSubtitle-Setup.exe` / `.msi` reported success but installed a broken
+  app: the `models\` folder was gone (so the app could not find its ASR model) and 238 files —
+  the localized resource folders (`cs\`, `de\`, `ja\`, …) and `docs\` — were silently missing.
+- **Root cause:** the WiX source generator emitted every `<Component>` with `Directory="INSTALLFOLDER"`,
+  flattening the tree. Same-named files from the 12 language folders collided and overwrote each
+  other. A second attempt emitted one `<Directory>` per leaf path only, so multi-level folders such
+  as `models\<name>\` lost their parent.
+- **Fix:** the generator now builds the **complete nested directory tree** (every ancestor prefix)
+  and places each component in the directory that mirrors its folder.
+- **Verification:** install then diff against the publish output → **519 / 519 files, 0 missing**;
+  `models\…\encoder…onnx`, `docs\USER_GUIDE.md`, `ja\…resources.dll` all present; the installed app
+  logs `model=streaming-zipformer-zh-14M installed=True` and a Start-menu shortcut is created.
+- The portable **ZIP was never affected** (it preserves the tree by construction) — only the MSI/Bundle.
+
+### P2 — `MaterialDesignVerticalSeparator` style does not exist *(FIXED)*
+
+- **Symptom:** would have thrown at window load (unresolvable `StaticResource`) after the Material
+  Design restyle.
+- **Root cause:** the resource key was guessed rather than verified.
+- **Fix:** the key list was checked against the actual `MaterialDesignThemes.Wpf` assembly resources
+  (the correct key is `MaterialDesignSeparator`); the separators were replaced with a plain divider.
+- **Verification:** the app launches and renders; all 123 tests still pass.
 
 ### P1 — `StreamingResampler` emitted zero samples *(FIXED)*
 
