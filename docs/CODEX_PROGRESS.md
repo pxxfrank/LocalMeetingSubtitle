@@ -144,3 +144,22 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
   signature requires a CA-issued OV/EV code-signing certificate, which was not available.
 - WiX v7 was rejected: it requires accepting the Open Source Maintenance Fee EULA, which must not be
   accepted on the owner's behalf. WiX v4.0.6 (free) is used instead.
+
+## Update — Material Design 3 UI (2026-10-08)
+
+- The WPF UI was restyled to **Google Material Design 3** using `MaterialDesignThemes` 5.3.2
+  (MIT) merged in `App.xaml` via `BundledTheme` + `MaterialDesign3.Defaults.xaml`
+  (PrimaryColor=Blue, SecondaryColor=Teal).
+- Main window: Material top app bar (`ColorZone` + elevation), status card with a floating-label
+  combo box and a hotword chip, outlined cards for the subtitle stream, and an elevated action bar
+  with icon buttons (`AppIconButton`, `AppPrimaryButton`, `AppActionButton` in `App.xaml`).
+- Settings window: card-based sections (was GroupBox), floating-hint fields, Material sliders and
+  check boxes. Floating subtitle overlay: rounded dark Material surface with a LIVE chip.
+- **No functional change**: every binding, command, `x:Name` and event handler was preserved;
+  all 123 automated tests still pass, and `OfflineVerification` is still 5/5 (runtime assemblies
+  remain free of `System.Net.Http`); the theme library is UI-only.
+- **Startup:** enabled `PublishReadyToRun` because the first cold launch of the published build was
+  dominated by JIT/AV scan (measured >40 s before, ~14 s cold and ~2.3 s warm after).
+- One UI bug found and fixed during the restyle: `MaterialDesignVerticalSeparator` does not exist in
+  5.3.2 (would have thrown at window load) — replaced with a plain divider.
+- Third-party notices updated with the two new MIT-licensed UI packages.

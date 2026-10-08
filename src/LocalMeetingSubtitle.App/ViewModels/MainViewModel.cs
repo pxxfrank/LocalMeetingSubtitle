@@ -30,7 +30,14 @@ public sealed class MainViewModel : ObservableObject
     private readonly IModelManager _modelManager;
     private readonly ISubtitleExportService _exportService;
     private readonly IPerformanceMonitor _performanceMonitor;
-    private readonly WasapiLoopbackCaptureService _captureEnumerator;
+    private readonly Func<WasapiLoopbackCaptureService> _captureFactory;
+    private WasapiLoopbackCaptureService? _captureService;
+
+    /// <summary>
+    /// Created on first use. Constructing the WASAPI capture service initialises the COM audio
+    /// stack, which measured ~5 s on the dev machine; doing it eagerly delayed the first window.
+    /// </summary>
+    private WasapiLoopbackCaptureService CaptureService => _captureService ??= _captureFactory();
     private readonly Func<IAsrEngine> _engineFactory;
 
     private readonly List<SubtitleSegment> _segments = new();
@@ -59,7 +66,7 @@ public sealed class MainViewModel : ObservableObject
         IModelManager modelManager,
         ISubtitleExportService exportService,
         IPerformanceMonitor performanceMonitor,
-        WasapiLoopbackCaptureService captureEnumerator,
+        Func<WasapiLoopbackCaptureService> captureFactory,
         Func<IAsrEngine> engineFactory)
     {
         Shell = shell;
@@ -70,7 +77,7 @@ public sealed class MainViewModel : ObservableObject
         _modelManager = modelManager;
         _exportService = exportService;
         _performanceMonitor = performanceMonitor;
-        _captureEnumerator = captureEnumerator;
+        _captureFactory = captureFactory;
         _engineFactory = engineFactory;
         _dispatcher = Dispatcher.CurrentDispatcher;
 
@@ -85,7 +92,7 @@ public sealed class MainViewModel : ObservableObject
         ToggleFloatingCommand = new RelayCommand(() => Shell.ToggleFloating());
         ReturnToLatestCommand = new RelayCommand(() => IsTailLocked = true);
         DismissWarningCommand = new RelayCommand(() => HasWarning = false);
-        RefreshDevicesCommand = new RelayCommand(RefreshDevices);
+        RefreshDevicesCommand = new AsyncRelayCommand(RefreshDevicesAsync);
 
         _performanceMonitor.Sampled += OnPerformanceSampled;
     }
@@ -110,7 +117,7 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand ToggleFloatingCommand { get; }
     public RelayCommand ReturnToLatestCommand { get; }
     public RelayCommand DismissWarningCommand { get; }
-    public RelayCommand RefreshDevicesCommand { get; }
+    public AsyncRelayCommand RefreshDevicesCommand { get; }
 
     /// <summary>Raised (on the UI thread) whenever a line is added or the partial text changes.</summary>
     public event EventHandler? SubtitleChanged;
@@ -365,7 +372,7 @@ public sealed class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(ModelName));
         OnPropertyChanged(nameof(ModelStatusText));
 
-        RefreshDevices();
+        await RefreshDevicesAsync().ConfigureAwait(true);
 
         IsPreparing = false;
         UpdateReadinessStatus();
@@ -389,12 +396,13 @@ public sealed class MainViewModel : ObservableObject
         if (descriptor is not null) _settings.LastModelId = descriptor.Id;
     }
 
-    private void RefreshDevices()
+    private async Task RefreshDevicesAsync()
     {
         var previousId = SelectedDevice?.Id ?? _settings.LastAudioDeviceId;
         try
         {
-            var found = _captureEnumerator.EnumerateDevices();
+            // COM/audio-stack initialisation and enumeration run off the UI thread.
+            var found = await Task.Run(() => CaptureService.EnumerateDevices()).ConfigureAwait(true);
             Devices.Clear();
             foreach (var device in found) Devices.Add(device);
         }

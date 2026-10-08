@@ -74,9 +74,11 @@ public partial class App : Application
             return;
         }
 
+        _logger.Info("Services built; creating shell.");
         _shell = new ShellService(_logger, CreateSettingsViewModel, RequestExit,
             (title, message) => _tray?.ShowBalloon(title, message));
 
+        _logger.Info("Shell created; creating view-model.");
         _mainViewModel = new MainViewModel(
             _shell,
             _logger,
@@ -86,15 +88,29 @@ public partial class App : Application
             _services.GetRequiredService<IModelManager>(),
             _services.GetRequiredService<ISubtitleExportService>(),
             _services.GetRequiredService<IPerformanceMonitor>(),
-            _services.GetRequiredService<WasapiLoopbackCaptureService>(),
+            () => _services.GetRequiredService<WasapiLoopbackCaptureService>(),
             () => _services.GetRequiredService<Func<IAsrEngine>>()());
         _shell.Attach(_mainViewModel);
 
+        _logger.Info("View-model created; creating tray icon.");
         _tray = new TrayIconController(_mainViewModel, _shell, _logger);
+        _logger.Info("Tray icon created.");
 
         // Show the window immediately (in its "Preparing…" state) so the UI is never blank.
-        _shell.ShowMainWindow();
-        MainWindow = _shell.MainWindow;
+        try
+        {
+            _shell.ShowMainWindow();
+            MainWindow = _shell.MainWindow;
+            _logger.Info("Main window shown.");
+        }
+        catch (Exception ex)
+        {
+            _logger.Error("Failed to create/show the main window", ex);
+            MessageBox.Show("无法创建主窗口 / Failed to create the main window:\n" + ex.Message,
+                "LocalMeetingSubtitle", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown();
+            return;
+        }
 
         _ = StartInitializationAsync();
     }

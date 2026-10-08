@@ -17,7 +17,7 @@ LocalMeetingSubtitle 是一个**完全离线、纯 CPU** 的 Windows 桌面会�
 - 字幕**只保存在本机**（`%LOCALAPPDATA%\LocalMeetingSubtitle\`），提供置顶悬浮字幕、搜索、热词、文本纠正与 TXT/SRT/Markdown 导出。
 - 运行期**不发起任何网络请求**：唯一引用 `System.Net.Http` 的 `ModelDownloads` 程序集与识别链路隔离，可静态验证（见“离线保证”）。
 
-技术栈：.NET 8 / WPF（`net8.0-windows`，x64）、NAudio 2.2.1、sherpa-onnx 1.13.8、Microsoft.Data.Sqlite 8.0.31（WAL）。
+技术栈：.NET 8 / WPF（`net8.0-windows`，x64，**Google Material Design 3** 界面，基于 `MaterialDesignThemes` 5.3.2 / MIT）、NAudio 2.2.1、sherpa-onnx 1.13.8、Microsoft.Data.Sqlite 8.0.31（WAL）。
 
 ## 快速开始 / Quick start
 
@@ -104,7 +104,8 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj `
 ## 三个必须诚实说明的限制 / Honest caveats
 
 1. **未在目标硬件上验收。** 开发主机（Xeon 6230N）远快于目标笔记本；目标机的 RTF / CPU / 延迟均为**估计值，非实测**。
-2. **UI 端到端实时链路未在本机走通。** 无真实会议音频，且应用数据目录内**故意未安装模型**，故“开始→转写→落库”的完整 UI 路径为 BLOCKED（各分层已分别测试）。
-3. **无真实会议 3 小时稳定性运行。** `ThreeHourSoak` 从未执行；**未产出代码签名安装包**（仅有便携 ZIP）。
+2. **UI 端到端实时链路未在本机走通。** 无真实会议播放音频，故“开始→转写→落库”的完整 UI 路径为 BLOCKED（各分层已分别测试；发布 ZIP 已内置模型并被自动识别）。
+3. **无真实会议 3 小时稳定性运行。** `ThreeHourSoak` 从未执行。
+4. **安装包为自签名**（`LocalMeetingSubtitle-Setup.exe` / `Setup.msi`，未获 CA 证书，SmartScreen 仍会警告）；未制作/签名受信任的正式安装包。
 
 更多细节见 [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) 与 [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)。

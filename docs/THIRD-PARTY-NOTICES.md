@@ -13,6 +13,8 @@ lists the component, the version used, its license, and where it is used.
 | **Microsoft.Extensions.DependencyInjection** | 8.0.1 | MIT | Dependency-injection container in the App |
 | **System.Diagnostics.PerformanceCounter** | 8.0.1 | MIT | CPU performance-counter sampling |
 | **.NET 8 / .NET Runtime** | 8.0.x | MIT | Runtime / WPF platform |
+| **MaterialDesignThemes.Wpf** | 5.3.2 | MIT | Google Material Design 3 theme + controls (UI only; no network, no telemetry) |
+| **MaterialDesignColors** | 5.3.2 | MIT | Material colour palette (dependency of MaterialDesignThemes) |
 | **xunit** + `xunit.runner.visualstudio` | 2.5.3 | Apache-2.0 | Test framework (test projects only) |
 | **Microsoft.NET.Test.Sdk** | 17.8.0 | MIT | Test host (test projects only) |
 | **coverlet.collector** | 6.0.0 | MIT | Code-coverage collector (test projects only) |
