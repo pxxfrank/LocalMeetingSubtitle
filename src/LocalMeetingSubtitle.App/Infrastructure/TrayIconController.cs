@@ -37,7 +37,7 @@ public sealed class TrayIconController : IDisposable
 
             _icon = new NotifyIcon
             {
-                Icon = SystemIcons.Application,
+                Icon = LoadAppIcon(),
                 Text = "字幕君",
                 Visible = true,
                 ContextMenuStrip = _menu
@@ -156,6 +156,25 @@ public sealed class TrayIconController : IDisposable
 
     private static string Truncate(string text, int max)
         => string.IsNullOrEmpty(text) || text.Length <= max ? text : text[..max];
+
+    private static Icon LoadAppIcon()
+    {
+        // Same artwork as the executable (Assets/app.ico), at the tray's 16x16.
+        try
+        {
+            var resource = System.Windows.Application.GetResourceStream(new Uri("Assets/app.ico", UriKind.Relative));
+            if (resource?.Stream is not null)
+            {
+                return new Icon(resource.Stream, 16, 16);
+            }
+        }
+        catch (Exception)
+        {
+            // Fall through: a generic icon is better than no tray icon.
+        }
+
+        return SystemIcons.Application;
+    }
 
     public void Dispose()
     {
