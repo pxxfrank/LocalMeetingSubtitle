@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Generates the WiX v4 source that installs the published app folder, preserving its
   full directory structure.
@@ -18,7 +18,7 @@
   as models\<name>\ lost their parent. This version builds the complete, nested tree.
 #>
 param(
-    [string]$AppFiles = "dist/LocalMeetingSubtitle-win-x64",
+    [string]$AppFiles = "dist/字幕君-win-x64",
     [string]$OutFile  = "installer/GeneratedFiles.wxs"
 )
 

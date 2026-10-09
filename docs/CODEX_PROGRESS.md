@@ -1,4 +1,4 @@
-# Codex Progress
+﻿# Codex Progress
 
 ## Current phase
 
@@ -47,7 +47,7 @@ Additional evidence:
 - Offline: `OfflineVerification` → **5/5 PASS** (native lib, no `System.Net.Http` reference,
   `%LOCALAPPDATA%` data dir, model present, offline decode produced text).
 - Release: `dotnet publish -c Release -r win-x64 --self-contained true` →
-  `dist/LocalMeetingSubtitle-win-x64/` (~184.7 MB, 495 files, incl. `onnxruntime.dll` 17.0 MB,
+  `dist/字幕君-win-x64/` (~184.7 MB, 495 files, incl. `onnxruntime.dll` 17.0 MB,
   `sherpa-onnx-c-api.dll` 4.4 MB). App smoke launch → process stayed alive (STILL_RUNNING) with
   successful startup logging (native=True 1.13.8, devices=1). The released ZIP bundles the model,
   and the app auto-detects it (see update below).
@@ -67,7 +67,7 @@ See [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
 1. **Target-hardware acceptance.** On the Windows 11 laptop (Core Ultra 7 155H, Arc, AI Boost):
    install and run, measure RTF / CPU / memory / first-and-final latency, and record results.
 2. **Install the model into the app data directory and run a real meeting.** Copy/download the model
-   into `%LOCALAPPDATA%\LocalMeetingSubtitle\models` and exercise the full UI path (Start → live
+   into `%LOCALAPPDATA%\字幕君\models` and exercise the full UI path (Start → live
    subtitles → DB), closing BLOCKED-1.
 3. **Run the 3-hour soak** (`ThreeHourSoak`) on a real meeting-like load; close BLOCKED-2.
 4. **Benchmark candidate B/C** (bilingual zh-en; SenseVoice) on the target machine and finalise the
@@ -96,8 +96,8 @@ dotnet test tests/LocalMeetingSubtitle.PerformanceTests/LocalMeetingSubtitle.Per
 
 # Model management (install into the app data dir)
 dotnet run --project tools/ModelManager -- list
-dotnet run --project tools/ModelManager -- install --id streaming-zipformer-zh-14M --models-root "$env:LOCALAPPDATA\LocalMeetingSubtitle\models"
-dotnet run --project tools/ModelManager -- verify --models-root "$env:LOCALAPPDATA\LocalMeetingSubtitle\models"
+dotnet run --project tools/ModelManager -- install --id streaming-zipformer-zh-14M --models-root "$env:LOCALAPPDATA\字幕君\models"
+dotnet run --project tools/ModelManager -- verify --models-root "$env:LOCALAPPDATA\字幕君\models"
 
 # Real-model benchmark
 dotnet run --project tools/AsrBenchmark -- --wav models/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/test_wavs/0.wav --threads 4
@@ -111,21 +111,21 @@ dotnet run --project tools/OfflineVerification -- --wav models/sherpa-onnx-strea
 
 # Run the app / publish
 dotnet run --project src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c Debug
-dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c Release -r win-x64 --self-contained true -o dist/LocalMeetingSubtitle-win-x64
+dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c Release -r win-x64 --self-contained true -o dist/字幕君-win-x64
 ```
 
 ## Update — portable model bundling + acceptance re-run (2026-10-08)
 
 - **Defect found & fixed (P2, usability):** the app only looked for models in
-  `%LOCALAPPDATA%\LocalMeetingSubtitle\models`, so the model bundled inside the release ZIP was not
+  `%LOCALAPPDATA%\字幕君\models`, so the model bundled inside the release ZIP was not
   detected. `ResolveModelsRoot()` now prefers `<app>\models` when it exists, otherwise the per-user
-  directory. Verified: after extracting `dist/LocalMeetingSubtitle-win-x64.zip` to a clean folder and
-  running `LocalMeetingSubtitle.exe`, the log shows:
+  directory. Verified: after extracting `dist/字幕君-win-x64.zip` to a clean folder and
+  running `字幕君.exe`, the log shows:
   `Using portable models directory: …\models` and
   `Startup check complete: native=True (1.13.8), model=streaming-zipformer-zh-14M installed=True, devices=1.`
   The UI shows “就绪 / Ready” with the model marked “已安装 / installed” and **Start enabled**.
-- **Release ZIP rebuilt:** `dist/LocalMeetingSubtitle-win-x64.zip` (96.5 MB, 516 entries, forward-slash
-  paths) containing `LocalMeetingSubtitle.exe`, the native sherpa-onnx/onnxruntime DLLs, the bundled
+- **Release ZIP rebuilt:** `dist/字幕君-win-x64.zip` (96.5 MB, 516 entries, forward-slash
+  paths) containing `字幕君.exe`, the native sherpa-onnx/onnxruntime DLLs, the bundled
   model, docs, and a launcher.
 - This materially strengthens **AC-20** (extract-and-run) and partially exercises the previously
   BLOCKED integrated path (engine + device selection + readiness), though a full live-meeting
@@ -136,10 +136,10 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
 - Added `installer/` (WiX v4): `Product.wxs`, `generate-files-wxs.ps1` (emits one component per file),
   `Bundle.wxs` (Burn bootstrapper), and `build-installer.ps1` (end-to-end, reproducible).
 - Produced and **signed** (self-signed cert, CurrentUser\My; the trust store was NOT modified):
-  - `dist/LocalMeetingSubtitle-Setup.msi` — per-user MSI (no admin), installs to
-    `%LOCALAPPDATA%\Programs\LocalMeetingSubtitle`, Start-menu shortcut, does not touch user data.
-  - `dist/LocalMeetingSubtitle-Setup.exe` — Burn bundle chaining the MSI.
-  - `dist/LocalMeetingSubtitle-win-x64/LocalMeetingSubtitle.exe` — the app exe.
+  - `dist/字幕君-Setup.msi` — per-user MSI (no admin), installs to
+    `%LOCALAPPDATA%\Programs\字幕君`, Start-menu shortcut, does not touch user data.
+  - `dist/字幕君-Setup.exe` — Burn bundle chaining the MSI.
+  - `dist/字幕君-win-x64/字幕君.exe` — the app exe.
 - Signature status is **untrusted** (self-signed) → SmartScreen will still warn. A trusted
   signature requires a CA-issued OV/EV code-signing certificate, which was not available.
 - WiX v7 was rejected: it requires accepting the Open Source Maintenance Fee EULA, which must not be
@@ -174,7 +174,7 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
   directory tree** (all ancestor prefixes) and places each component in its real folder. The MSI is also
   built with `-arch x64` now (it was being produced as a 32-bit package).
 - **Re-verified end-to-end:** silent install → diff vs publish → **519 / 519 files, 0 missing**;
-  `models\…\encoder…onnx`, `docs\USER_GUIDE.md`, `ja\…resources.dll`, `Run-LocalMeetingSubtitle.cmd`
+  `models\…\encoder…onnx`, `docs\USER_GUIDE.md`, `ja\…resources.dll`, `Run-字幕君.cmd`
   all present; Start-menu shortcut created; the installed app logs
   `model=streaming-zipformer-zh-14M installed=True, devices=1`.
 - The portable **ZIP was never affected**; only the MSI/Bundle were broken — both have been rebuilt, and
@@ -210,3 +210,22 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
      fully themed templates.
 - Version bumped to **0.3.0**; installers and the portable ZIP rebuilt and re-signed (bundle intentionally
   unsigned, per the note above).
+
+## Update — renamed to 字幕君 (v0.3.1) (2026-10-09)
+
+- The application is now named **字幕君** everywhere user-visible: window / header / tray titles, the floating
+  subtitle window (`字幕君 悬浮字幕`), all message boxes, the executable (`字幕君.exe`), the installer product
+  name and install directory (`%LOCALAPPDATA%\Programs\字幕君`), the Start-menu folder and shortcut, the
+  uninstall registry key, and the release artifacts (`字幕君-Setup.*`, `字幕君-win-x64.zip`).
+- The **user data directory** moved to `%LOCALAPPDATA%\字幕君\` (database / logs / models / exports).
+  There is **no automatic migration** — existing data must be moved manually.
+- Internal identifiers (assembly names `LocalMeetingSubtitle.*`, namespaces, project folders, `.sln`) were
+  intentionally left unchanged; users never see them.
+- Files that contain Chinese are saved as **UTF-8 with BOM**: the dev host ANSI codepage is 936 (GBK), so
+  PowerShell 5.1 would otherwise mis-decode the `.ps1` scripts.
+- **Startup-crash defect introduced by the rename and fixed:** an HTTP `User-Agent` header value must be
+  ASCII, so `ParseAdd("字幕君/0.1")` threw `FormatException` and the app exited on launch. Now ASCII
+  (`SubtitleJun/0.1`). Every other use of the name (mutex, message boxes, temp dir, registry) is verified
+  to be non-ASCII-safe.
+- Version bumped to **0.3.1**; MSI + Burn bundle + portable ZIP rebuilt with the ASR model bundled
+  (parity with 0.3.0) and re-signed (bundle intentionally unsigned).

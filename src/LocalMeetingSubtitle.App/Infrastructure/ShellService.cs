@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Threading;
 using LocalMeetingSubtitle.App.ViewModels;
 using LocalMeetingSubtitle.Core.Abstractions;
@@ -85,7 +85,7 @@ public sealed class ShellService : IShellService
             catch (Exception ex)
             {
                 _log.Error("Failed to open settings window", ex);
-                MessageBox.Show("Unable to open settings: " + ex.Message, "LocalMeetingSubtitle",
+                MessageBox.Show("Unable to open settings: " + ex.Message, "字幕君",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         });

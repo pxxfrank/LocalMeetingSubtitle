@@ -1,4 +1,4 @@
-# Release Checklist — Acceptance Matrix (AC-01 .. AC-20)
+﻿# Release Checklist — Acceptance Matrix (AC-01 .. AC-20)
 
 **Status banner: 候选发布版本 — 待实机验收 / Release candidate — pending hardware acceptance.**
 
@@ -30,9 +30,9 @@ Legend: `PASS` = verified with evidence · `PARTIAL` = some sub-checks pass, oth
 | AC-15 | 悬浮字幕窗口（置顶/字号/透明度/鼠标穿透与恢复） | 手动 + 代码评审 | 置顶、可调、穿透可恢复 | 通过（置顶/穿透样式已验证；窗口缩放在 `KNOWN_ISSUES` 中记为未交互验证） | `FloatingSubtitleWindow` | 开发主机 | **PASS** |
 | AC-16 | 托盘操作（开始/暂停/停止/悬浮/退出） | 手动 + 代码评审 | 菜单反映实时状态 | 通过 | `TrayIconController` | 开发主机 | **PASS** |
 | AC-17 | 资源占用（CPU ≤25%、内存 ≤1 GB） | 采样/基准 | 达标 | 开发主机：单 WAV 基准工作集 100 MB（RTF≈0.05）；目标机未测 | 基准输出 | 开发主机 **PASS** / 目标机 | **PASS (dev host) / NOT_TESTED (target)** |
-| AC-18 | 自包含发布产物可生成 | `dotnet publish -c Release -r win-x64 --self-contained true` | 生成完整产物 | `dist/LocalMeetingSubtitle-win-x64/`（~184.7 MB，495 文件，含 `onnxruntime.dll` 17.0 MB、`sherpa-onnx-c-api.dll` 4.4 MB） | 发布目录 | 开发主机 | **PASS** |
-| AC-19 | 代码签名安装包 | 生成并签名安装程序 | 已签名安装包 | 已生成 `dist/LocalMeetingSubtitle-Setup.msi`(83 MB) 与 `dist/LocalMeetingSubtitle-Setup.exe`(83.5 MB，WiX Burn)，两者均以**自签名**证书签名（证书链不受信任，Windows SmartScreen 仍会警告）；**未获得 CA 签发的受信任证书** | `installer/`、`dist/` | 开发主机 | **PARTIAL（自签名）** |
-| AC-20 | 便携 ZIP 构建并在目标机启动 | 解压并运行 `LocalMeetingSubtitle.exe` | 正常启动 | 开发主机：解压后进程存活（STILL_RUNNING）；日志记录 native=True (1.13.8)、自动识别随包模型 (installed=True)、设备数=1，界面显示“就绪 / Ready”且 Start 可用（不再置灰）；目标机（Win11）未测 | 冒烟启动日志 | 开发主机 **PASS** / 目标机 | **PARTIAL** |
+| AC-18 | 自包含发布产物可生成 | `dotnet publish -c Release -r win-x64 --self-contained true` | 生成完整产物 | `dist/字幕君-win-x64/`（~184.7 MB，495 文件，含 `onnxruntime.dll` 17.0 MB、`sherpa-onnx-c-api.dll` 4.4 MB） | 发布目录 | 开发主机 | **PASS** |
+| AC-19 | 代码签名安装包 | 生成并签名安装程序 | 已签名安装包 | 已生成 `dist/字幕君-Setup.msi`(83 MB) 与 `dist/字幕君-Setup.exe`(83.5 MB，WiX Burn)，两者均以**自签名**证书签名（证书链不受信任，Windows SmartScreen 仍会警告）；**未获得 CA 签发的受信任证书** | `installer/`、`dist/` | 开发主机 | **PARTIAL（自签名）** |
+| AC-20 | 便携 ZIP 构建并在目标机启动 | 解压并运行 `字幕君.exe` | 正常启动 | 开发主机：解压后进程存活（STILL_RUNNING）；日志记录 native=True (1.13.8)、自动识别随包模型 (installed=True)、设备数=1，界面显示“就绪 / Ready”且 Start 可用（不再置灰）；目标机（Win11）未测 | 冒烟启动日志 | 开发主机 **PASS** / 目标机 | **PARTIAL** |
 
 ## Summary
 

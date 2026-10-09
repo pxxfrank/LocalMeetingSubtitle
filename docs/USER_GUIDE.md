@@ -1,6 +1,6 @@
-# 用户指南 — LocalMeetingSubtitle 本地会议字幕
+﻿# 用户指南 — 字幕君 本地会议字幕
 
-LocalMeetingSubtitle 在**本机**把系统正在播放的声音（会议、视频、网课等）实时转成中文字幕。
+字幕君 在**本机**把系统正在播放的声音（会议、视频、网课等）实时转成中文字幕。
 它**完全离线、纯 CPU 运行**，不需要麦克风，也不会把任何内容发到网上。
 
 > 本指南对应**候选发布版本（待实机验收）**。在目标笔记本上完成验收前，延迟/资源占用等指标以实际使用为准。
@@ -16,11 +16,11 @@ LocalMeetingSubtitle 在**本机**把系统正在播放的声音（会议、视�
 
 ## 2. 安装与首次启动
 
-1. 解压发布包（例如 `LocalMeetingSubtitle-win-x64`）。
-2. 双击 **`LocalMeetingSubtitle.exe`**。
+1. 解压发布包（例如 `字幕君-win-x64`）。
+2. 双击 **`字幕君.exe`**。
 3. 程序为**单实例**：若已在运行，再次启动会提示“已在运行”并退出。
 4. 首次启动会自动创建用户数据目录：
-   `%LOCALAPPDATA%\LocalMeetingSubtitle\`（数据库、日志、模型、导出都在这里）。
+   `%LOCALAPPDATA%\字幕君\`（数据库、日志、模型、导出都在这里）。
 
 程序启动后会显示主窗口，右上角显示状态（空闲 / 加载模型 / 就绪 / 转写中 / 已暂停 / 错误）。
 
@@ -33,11 +33,11 @@ LocalMeetingSubtitle 在**本机**把系统正在播放的声音（会议、视�
 ```powershell
 $env:PATH = "$env:USERPROFILE\.dotnet;$env:PATH"   # 若 .NET 不在 PATH
 dotnet run --project tools/ModelManager -- install --id streaming-zipformer-zh-14M `
-    --models-root "$env:LOCALAPPDATA\LocalMeetingSubtitle\models"
+    --models-root "$env:LOCALAPPDATA\字幕君\models"
 ```
 
 也可以让维护者手动把模型文件放到
-`%LOCALAPPDATA%\LocalMeetingSubtitle\models\<模型目录>\` 下。
+`%LOCALAPPDATA%\字幕君\models\<模型目录>\` 下。
 放好后重新打开程序（或重启程序），状态栏应显示“就绪”。
 
 ## 4. 主界面说明
@@ -122,7 +122,7 @@ dotnet run --project tools/ModelManager -- install --id streaming-zipformer-zh-1
    - **字幕 / SubRip (`*.srt`)**
    - **Markdown (`*.md`)**
 3. 选择是否包含时间戳：在“设置”中的“导出包含时间戳”。
-4. 导出文件默认建议保存到 `%LOCALAPPDATA%\LocalMeetingSubtitle\exports\`，也可另存到任意位置。
+4. 导出文件默认建议保存到 `%LOCALAPPDATA%\字幕君\exports\`，也可另存到任意位置。
 5. 只有**已定稿**的字幕行会被导出（临时字幕不导出）。
 
 ## 12. 托盘操作
@@ -147,7 +147,7 @@ dotnet run --project tools/ModelManager -- install --id streaming-zipformer-zh-1
 
 ## 14. 数据与隐私
 
-- 所有数据都在本机 `%LOCALAPPDATA%\LocalMeetingSubtitle\`：
+- 所有数据都在本机 `%LOCALAPPDATA%\字幕君\`：
   - `subtitles.db`：会话、字幕、热词、设置、性能指标（SQLite，WAL 模式）。
   - `logs\`：运行日志。
   - `models\`：语音模型。
@@ -165,6 +165,6 @@ dotnet run --project tools/ModelManager -- install --id streaming-zipformer-zh-1
 5. **看底部“音量电平条”**：播放声音时电平条应有起伏。若电平条不动，说明**没有捕获到声音**（设备选错 / 系统静音 / 该应用用了独占音频）。
 6. **看顶部警告横幅**：出现“音频积压超过 … 秒、已丢弃音频”等提示时，说明机器识别跟不上，字幕会滞后或丢字，可尝试降低会议音频负载或换更强的机器。
 7. **长句不出现**：识别在“断句”后才定稿为最终字幕；临时（斜体）字幕一直在更新，说明正在识别中，稍等即可。
-8. **仍无输出**：查看 `%LOCALAPPDATA%\LocalMeetingSubtitle\logs\` 下的日志，寻找 `ASR decode failed` / `audio capture failed` / `native library` 等关键字。
+8. **仍无输出**：查看 `%LOCALAPPDATA%\字幕君\logs\` 下的日志，寻找 `ASR decode failed` / `audio capture failed` / `native library` 等关键字。
 
 > 若日志提示 **“未找到 sherpa-onnx 原生库 / native library missing”**，说明缺少 `sherpa-onnx-c-api.dll` / `onnxruntime.dll`（发布包应自带，请勿删除）。

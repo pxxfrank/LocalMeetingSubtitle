@@ -1,4 +1,4 @@
-using LocalMeetingSubtitle.Asr;
+﻿using LocalMeetingSubtitle.Asr;
 using LocalMeetingSubtitle.Core.Abstractions;
 using LocalMeetingSubtitle.Core.Models;
 
@@ -20,7 +20,7 @@ public sealed class HttpModelManager : IModelManager
         _http = http ?? new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
         if (_http.DefaultRequestHeaders.UserAgent.Count == 0)
         {
-            _http.DefaultRequestHeaders.UserAgent.ParseAdd("LocalMeetingSubtitle/0.1");
+            _http.DefaultRequestHeaders.UserAgent.ParseAdd("SubtitleJun/0.1");
         }
     }
 

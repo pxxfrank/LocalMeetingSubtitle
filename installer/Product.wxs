@@ -1,32 +1,32 @@
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+﻿<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
 
   <!--
-    LocalMeetingSubtitle installer (per-user, no admin required).
-    Installs the self-contained build into %LOCALAPPDATA%\Programs\LocalMeetingSubtitle
+    字幕君 installer (per-user, no admin required).
+    Installs the self-contained build into %LOCALAPPDATA%\Programs\字幕君
     and creates a Start-menu shortcut. User data still lives in
-    %LOCALAPPDATA%\LocalMeetingSubtitle and is NOT touched by install/uninstall.
+    %LOCALAPPDATA%\字幕君 and is NOT touched by install/uninstall.
   -->
-  <Package Name="LocalMeetingSubtitle"
-           Manufacturer="LocalMeetingSubtitle"
-           Version="0.3.0"
+  <Package Name="字幕君"
+           Manufacturer="字幕君"
+           Version="0.3.1"
            UpgradeCode="b7e1c2d3-4a5f-4e6b-9c8d-1f2a3b4c5d6e"
            Scope="perUser"
            Compressed="yes">
 
-    <MajorUpgrade DowngradeErrorMessage="A newer version of LocalMeetingSubtitle is already installed." />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of 字幕君 is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="ProgramsFolder" Name="Programs">
-        <Directory Id="INSTALLFOLDER" Name="LocalMeetingSubtitle" />
+        <Directory Id="INSTALLFOLDER" Name="字幕君" />
       </Directory>
     </StandardDirectory>
 
     <StandardDirectory Id="ProgramMenuFolder">
-      <Directory Id="AppMenuFolder" Name="LocalMeetingSubtitle" />
+      <Directory Id="AppMenuFolder" Name="字幕君" />
     </StandardDirectory>
 
-    <Feature Id="Main" Title="LocalMeetingSubtitle" Level="1">
+    <Feature Id="Main" Title="字幕君" Level="1">
       <ComponentGroupRef Id="AppFiles" />
       <ComponentRef Id="StartMenuShortcut" />
     </Feature>
@@ -36,12 +36,12 @@
   <Fragment>
     <Component Id="StartMenuShortcut" Directory="AppMenuFolder" Guid="a1b2c3d4-5566-4778-99aa-bbccddeeff00">
       <Shortcut Id="AppShortcut"
-                Name="LocalMeetingSubtitle"
+                Name="字幕君"
                 Description="Offline real-time meeting subtitles"
-                Target="[INSTALLFOLDER]LocalMeetingSubtitle.exe"
+                Target="[INSTALLFOLDER]字幕君.exe"
                 WorkingDirectory="INSTALLFOLDER" />
       <RemoveFolder Id="RemoveAppMenuFolder" Directory="AppMenuFolder" On="uninstall" />
-      <RegistryValue Root="HKCU" Key="Software\LocalMeetingSubtitle"
+      <RegistryValue Root="HKCU" Key="Software\字幕君"
                      Name="installed" Type="integer" Value="1" KeyPath="yes" />
     </Component>
   </Fragment>

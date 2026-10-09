@@ -1,6 +1,6 @@
-<#
+﻿<#
 .SYNOPSIS
-  Builds the LocalMeetingSubtitle installer (MSI + Setup.exe) from the published app folder.
+  Builds the 字幕君 installer (MSI + Setup.exe) from the published app folder.
 
 .DESCRIPTION
   Requires the WiX v4 CLI as a global .NET tool:
@@ -10,8 +10,8 @@
   that directory exists).
 
   Produces:
-      dist/LocalMeetingSubtitle-Setup.msi     (per-user MSI, no admin required)
-      dist/LocalMeetingSubtitle-Setup.exe     (Burn bootstrapper that chains the MSI)
+      dist/字幕君-Setup.msi     (per-user MSI, no admin required)
+      dist/字幕君-Setup.exe     (Burn bootstrapper that chains the MSI)
 
   Optionally signs both (and the app exe) with a certificate from Cert:\CurrentUser\My.
   NOTE: a self-signed certificate produces an "untrusted" signature; Windows SmartScreen will
@@ -22,7 +22,7 @@
   ./installer/build-installer.ps1 -CertThumbprint 94ED22A334454473C0B064614E9FD5B30A8C79C4
 #>
 param(
-    [string]$AppFiles = "dist/LocalMeetingSubtitle-win-x64",
+    [string]$AppFiles = "dist/字幕君-win-x64",
     [string]$Version  = "0.1.0",
     [string]$CertThumbprint = ""
 )
@@ -48,10 +48,10 @@ Write-Host "[1/4] Regenerating installer/GeneratedFiles.wxs ..."
 & "$PSScriptRoot/generate-files-wxs.ps1" -AppFiles $AppFiles -OutFile "installer/GeneratedFiles.wxs"
 
 Write-Host "[2/4] Building MSI ..."
-& wix build installer/Product.wxs installer/GeneratedFiles.wxs -arch x64 -o "dist/LocalMeetingSubtitle-Setup.msi"
+& wix build installer/Product.wxs installer/GeneratedFiles.wxs -arch x64 -o "dist/字幕君-Setup.msi"
 
 Write-Host "[3/4] Building Setup.exe (Burn bundle) ..."
-& wix build installer/Bundle.wxs -arch x64 -ext WixToolset.Bal.wixext -o "dist/LocalMeetingSubtitle-Setup.exe"
+& wix build installer/Bundle.wxs -arch x64 -ext WixToolset.Bal.wixext -o "dist/字幕君-Setup.exe"
 
 if ($CertThumbprint) {
     Write-Host "[4/4] Signing with certificate $CertThumbprint ..."
@@ -61,8 +61,8 @@ if ($CertThumbprint) {
     # the signed bundle then fails with 0x80070002 ("Failed to acquire container: WixAttachedContainer")
     # and installs nothing. Signing the MSI and the app exe is safe and is what matters for the
     # installed product. (To sign a bundle you must use the engine-signing workflow instead.)
-    foreach ($f in @("$AppFiles/LocalMeetingSubtitle.exe",
-                     "dist/LocalMeetingSubtitle-Setup.msi")) {
+    foreach ($f in @("$AppFiles/字幕君.exe",
+                     "dist/字幕君-Setup.msi")) {
         if (Test-Path $f) {
             Set-AuthenticodeSignature -FilePath $f -Certificate $cert -HashAlgorithm SHA256 | Out-Null
         }
@@ -72,5 +72,5 @@ if ($CertThumbprint) {
 }
 
 Write-Host "Done."
-Get-Item "dist/LocalMeetingSubtitle-Setup.msi", "dist/LocalMeetingSubtitle-Setup.exe" |
+Get-Item "dist/字幕君-Setup.msi", "dist/字幕君-Setup.exe" |
     Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}

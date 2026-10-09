@@ -1,6 +1,6 @@
-# Architecture
+﻿# Architecture
 
-LocalMeetingSubtitle is a fully offline, CPU-only Windows desktop application that turns the
+字幕君 is a fully offline, CPU-only Windows desktop application that turns the
 system playback (render) audio into live Chinese subtitles. This document describes the module
 layout, data flow, threading model, persistence schema, and the public contracts.
 
@@ -101,7 +101,7 @@ flushed and persisted first, then the engine/session are replaced — capture is
 
 ## 4. Persistence (SQLite)
 
-- File: `%LOCALAPPDATA%\LocalMeetingSubtitle\subtitles.db`; PRAGMA `journal_mode=WAL`,
+- File: `%LOCALAPPDATA%\字幕君\subtitles.db`; PRAGMA `journal_mode=WAL`,
   `foreign_keys=ON`, `synchronous=NORMAL`. Connection pooling disabled so the file (and `-wal`/`-shm`)
   is deletable after close.
 - Versioned migrations (`schema_version` table) run each in its own transaction.

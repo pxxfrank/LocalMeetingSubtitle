@@ -1,4 +1,4 @@
-# Known Issues
+﻿# Known Issues
 
 This file lists defects found and fixed during development, open (non-blocking) limitations, and
 items that could not be verified on the available hardware.
@@ -31,7 +31,7 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 
 ### P1 — Installer flattened the folder tree *(FIXED)*
 
-- **Symptom:** `LocalMeetingSubtitle-Setup.exe` / `.msi` reported success but installed a broken
+- **Symptom:** `字幕君-Setup.exe` / `.msi` reported success but installed a broken
   app: the `models\` folder was gone (so the app could not find its ASR model) and 238 files —
   the localized resource folders (`cs\`, `de\`, `ja\`, …) and `docs\` — were silently missing.
 - **Root cause:** the WiX source generator emitted every `<Component>` with `Directory="INSTALLFOLDER"`,
@@ -47,7 +47,7 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 
 ### P1 — Signed Burn `Setup.exe` failed to install *(FIXED)*
 
-- **Symptom:** double-clicking `LocalMeetingSubtitle-Setup.exe` did nothing useful; the Burn log showed
+- **Symptom:** double-clicking `字幕君-Setup.exe` did nothing useful; the Burn log showed
   `Error 0x80070002: Failed to acquire container: WixAttachedContainer` → `exit code 0x2`, nothing installed.
 - **Root cause:** I applied an Authenticode signature to the **burn bundle after building it**.
   Authenticode appends the signature at the end of the PE file, which invalidates the location Burn uses
@@ -126,7 +126,7 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 ### BLOCKED-1 — Full Start → transcribe → persist path not exercised in the UI
 
 - **Why:** no real meeting audio was available on the dev host, and the model was **intentionally not
-  installed** in the application's data directory (`%LOCALAPPDATA%\LocalMeetingSubtitle\models`), so
+  installed** in the application's data directory (`%LOCALAPPDATA%\字幕君\models`), so
   the UI Start button is correctly disabled (no fake output is produced).
 - **Status:** each layer is tested separately (audio capture probe, decode benchmark, pipeline tests,
   persistence tests), but the integrated UI path is **BLOCKED / NOT_TESTED** at the UI level.
@@ -139,6 +139,6 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 
 ### BLOCKED-3 — No code-signed installer
 
-- **Why:** only the portable, self-contained ZIP (`dist/LocalMeetingSubtitle-win-x64/`) was produced.
+- **Why:** only the portable, self-contained ZIP (`dist/字幕君-win-x64/`) was produced.
 - **Status:** **NOT_TESTED**. **Do not claim the release is signed.** Code signing is optional and
   would need a certificate, if desired.

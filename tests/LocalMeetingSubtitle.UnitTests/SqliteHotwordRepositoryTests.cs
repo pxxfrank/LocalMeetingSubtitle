@@ -1,4 +1,4 @@
-using LocalMeetingSubtitle.Core.Models;
+﻿using LocalMeetingSubtitle.Core.Models;
 
 namespace LocalMeetingSubtitle.UnitTests;
 
@@ -36,13 +36,13 @@ public sealed class SqliteHotwordRepositoryTests
 
         var groupId = await repository.UpsertGroupAsync(new HotwordGroup { Name = "Products", SortOrder = 2 });
 
-        var hotword = new Hotword { Text = "LocalMeetingSubtitle", Enabled = true, GroupId = groupId, Score = 1.75f };
+        var hotword = new Hotword { Text = "字幕君", Enabled = true, GroupId = groupId, Score = 1.75f };
         var id = await repository.UpsertHotwordAsync(hotword);
         Assert.True(id > 0);
         Assert.Equal(id, hotword.Id);
 
         var loaded = Assert.Single(await repository.GetHotwordsAsync());
-        Assert.Equal("LocalMeetingSubtitle", loaded.Text);
+        Assert.Equal("字幕君", loaded.Text);
         Assert.True(loaded.Enabled);
         Assert.Equal(groupId, loaded.GroupId);
         Assert.Equal(1.75f, loaded.Score, precision: 3);

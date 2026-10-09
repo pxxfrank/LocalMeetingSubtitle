@@ -1,4 +1,4 @@
-using System.Drawing;
+﻿using System.Drawing;
 using System.Windows.Forms;
 using LocalMeetingSubtitle.App.ViewModels;
 using LocalMeetingSubtitle.Core.Abstractions;
@@ -38,7 +38,7 @@ public sealed class TrayIconController : IDisposable
             _icon = new NotifyIcon
             {
                 Icon = SystemIcons.Application,
-                Text = "LocalMeetingSubtitle 本地会议字幕",
+                Text = "字幕君",
                 Visible = true,
                 ContextMenuStrip = _menu
             };

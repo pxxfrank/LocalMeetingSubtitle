@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows.Threading;
 using LocalMeetingSubtitle.App.Infrastructure;
@@ -907,7 +907,7 @@ public sealed class MainViewModel : ObservableObject
     {
         try
         {
-            var dir = Path.Combine(Path.GetTempPath(), "LocalMeetingSubtitle");
+            var dir = Path.Combine(Path.GetTempPath(), "字幕君");
             var path = Path.Combine(dir, "hotwords.txt");
             return _hotwordService.WriteModelHotwordFile(path);
         }

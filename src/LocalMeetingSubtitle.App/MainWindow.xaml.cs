@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using LocalMeetingSubtitle.App.ViewModels;
@@ -119,7 +119,7 @@ public partial class MainWindow : Window
         {
             var result = MessageBox.Show(this,
                 "正在转写中。\n\n是：最小化到托盘继续转写\n否：停止并退出程序\n\nStill transcribing.\nYes: minimize to tray\nNo: stop and exit",
-                "LocalMeetingSubtitle", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                "字幕君", MessageBoxButton.YesNo, MessageBoxImage.Question);
 
             if (result == MessageBoxResult.Yes) _vm.Shell.HideMainWindow();
             else _vm.Shell.RequestExit();

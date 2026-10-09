@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using LocalMeetingSubtitle.App.Infrastructure;
@@ -22,7 +22,7 @@ namespace LocalMeetingSubtitle.App;
 /// </summary>
 public partial class App : Application
 {
-    private const string MutexName = "Local\\LocalMeetingSubtitle.SingleInstance.v1";
+    private const string MutexName = "Local\\字幕君.SingleInstance.v1";
 
     private SingleInstanceGuard? _singleInstance;
     private ServiceProvider? _services;
@@ -53,13 +53,13 @@ public partial class App : Application
         {
             _logger.Warn("A second instance attempted to start; exiting.");
             MessageBox.Show(
-                "LocalMeetingSubtitle 已在运行。\nLocalMeetingSubtitle is already running.",
-                "LocalMeetingSubtitle", MessageBoxButton.OK, MessageBoxImage.Information);
+                "字幕君 已在运行。\n字幕君 is already running.",
+                "字幕君", MessageBoxButton.OK, MessageBoxImage.Information);
             Shutdown();
             return;
         }
 
-        _logger.Info($"=== LocalMeetingSubtitle starting (v{GetType().Assembly.GetName().Version}) ===");
+        _logger.Info($"=== 字幕君 starting (v{GetType().Assembly.GetName().Version}) ===");
 
         try
         {
@@ -69,7 +69,7 @@ public partial class App : Application
         {
             _logger.Error("Building the service container failed", ex);
             MessageBox.Show("初始化失败 / Initialization failed:\n" + ex.Message,
-                "LocalMeetingSubtitle", MessageBoxButton.OK, MessageBoxImage.Error);
+                "字幕君", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown();
             return;
         }
@@ -110,7 +110,7 @@ public partial class App : Application
         {
             _logger.Error("Failed to create/show the main window", ex);
             MessageBox.Show("无法创建主窗口 / Failed to create the main window:\n" + ex.Message,
-                "LocalMeetingSubtitle", MessageBoxButton.OK, MessageBoxImage.Error);
+                "字幕君", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown();
             return;
         }
@@ -130,7 +130,7 @@ public partial class App : Application
         {
             _logger?.Error("Startup initialization failed", ex);
             MessageBox.Show("初始化失败 / Initialization failed:\n" + ex.Message,
-                "LocalMeetingSubtitle", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "字幕君", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -228,7 +228,7 @@ public partial class App : Application
         try
         {
             MessageBox.Show("发生未处理错误 / Unhandled error:\n" + e.Exception.Message,
-                "LocalMeetingSubtitle", MessageBoxButton.OK, MessageBoxImage.Error);
+                "字幕君", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         catch
         {
@@ -244,7 +244,7 @@ public partial class App : Application
         try
         {
             MessageBox.Show("发生严重错误 / Fatal error:\n" + (ex?.Message ?? e.ExceptionObject?.ToString()),
-                "LocalMeetingSubtitle", MessageBoxButton.OK, MessageBoxImage.Error);
+                "字幕君", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         catch
         {
@@ -293,7 +293,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        _logger?.Info("LocalMeetingSubtitle exiting.");
+        _logger?.Info("字幕君 exiting.");
 
         try { _tray?.Dispose(); } catch { /* ignore */ }
         try { _services?.Dispose(); } catch { /* ignore */ }

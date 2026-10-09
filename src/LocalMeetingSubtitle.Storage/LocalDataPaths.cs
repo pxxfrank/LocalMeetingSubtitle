@@ -1,15 +1,15 @@
-namespace LocalMeetingSubtitle.Storage;
+﻿namespace LocalMeetingSubtitle.Storage;
 
 /// <summary>
 /// Resolves the per-user writable data directory for the application. Everything the app
-/// persists lives under <c>%LOCALAPPDATA%\LocalMeetingSubtitle\</c> so it never touches
+/// persists lives under <c>%LOCALAPPDATA%\字幕君\</c> so it never touches
 /// Program Files (which is read-only for standard users).
 /// </summary>
 public static class LocalDataPaths
 {
-    public const string AppFolderName = "LocalMeetingSubtitle";
+    public const string AppFolderName = "字幕君";
 
-    /// <summary>The per-user root: <c>%LOCALAPPDATA%\LocalMeetingSubtitle</c>.</summary>
+    /// <summary>The per-user root: <c>%LOCALAPPDATA%\字幕君</c>.</summary>
     public static string Root { get; } = ResolveRoot();
 
     public static string DatabaseFile => Path.Combine(Root, "subtitles.db");

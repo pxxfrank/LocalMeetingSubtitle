@@ -1,4 +1,4 @@
-# LocalMeetingSubtitle 本地会议字幕
+﻿# 字幕君 本地会议字幕
 
 > **状态 / Status: 候选发布版本 — 待实机验收 / Release candidate — pending hardware acceptance**
 >
@@ -10,11 +10,11 @@
 
 ## 这是什么 / What it is
 
-LocalMeetingSubtitle 是一个**完全离线、纯 CPU** 的 Windows 桌面会议实时字幕工具：
+字幕君 是一个**完全离线、纯 CPU** 的 Windows 桌面会议实时字幕工具：
 
 - 通过 **WASAPI loopback** 捕获系统播放（扬声器/耳机）声音，无需麦克风、无需虚拟声卡。
 - 使用 **sherpa-onnx**（流式 zipformer / 离线 SenseVoice）在本地进行语音识别，输出中文实时字幕。
-- 字幕**只保存在本机**（`%LOCALAPPDATA%\LocalMeetingSubtitle\`），提供置顶悬浮字幕、搜索、热词、文本纠正与 TXT/SRT/Markdown 导出。
+- 字幕**只保存在本机**（`%LOCALAPPDATA%\字幕君\`），提供置顶悬浮字幕、搜索、热词、文本纠正与 TXT/SRT/Markdown 导出。
 - 运行期**不发起任何网络请求**：唯一引用 `System.Net.Http` 的 `ModelDownloads` 程序集与识别链路隔离，可静态验证（见“离线保证”）。
 
 技术栈：.NET 8 / WPF（`net8.0-windows`，x64，**Claude 风格极简界面**：自绘主题 + 线性图标，支持**明/暗主题实时切换**，不依赖任何第三方 UI 框架）、NAudio 2.2.1、sherpa-onnx 1.13.8、Microsoft.Data.Sqlite 8.0.31（WAL）。
@@ -37,18 +37,18 @@ dotnet test tests/LocalMeetingSubtitle.PerformanceTests/LocalMeetingSubtitle.Per
 
 # 3) 安装模型到应用数据目录（应用从 %LOCALAPPDATA% 读取模型）
 dotnet run --project tools/ModelManager -- install --id streaming-zipformer-zh-14M `
-    --models-root "$env:LOCALAPPDATA\LocalMeetingSubtitle\models"
+    --models-root "$env:LOCALAPPDATA\字幕君\models"
 
 # 4) 运行（开发态）
 dotnet run --project src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c Debug
 
 # 5) 生成自包含发布产物
 dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj `
-    -c Release -r win-x64 --self-contained true -o dist/LocalMeetingSubtitle-win-x64
+    -c Release -r win-x64 --self-contained true -o dist/字幕君-win-x64
 ```
 
 首次启动后：选择音频设备 → 点击 **开始 / Start** → 播放任意会议声音即可看到实时字幕。
-发布包运行：解压 `dist/LocalMeetingSubtitle-win-x64`，双击 `LocalMeetingSubtitle.exe`。
+发布包运行：解压 `dist/字幕君-win-x64`，双击 `字幕君.exe`。
 
 ## 项目结构 / Project layout
 
@@ -99,13 +99,13 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj `
 
 - 运行期识别链路（`Core` / `Asr` / `Audio` / `Storage` 程序集）**不引用** `System.Net.Http` 或任何 `System.Net.*`；网络能力被隔离在 `ModelDownloads` 程序集中，仅用于开发/安装期下载模型。
 - `tools/OfflineVerification` 校验 **5/5 PASS**：原生库加载、无网络引用、数据目录位于 `%LOCALAPPDATA%`、模型文件存在、离线解码产出文本。
-- 用户数据（数据库、日志、模型、导出）全部写入 `%LOCALAPPDATA%\LocalMeetingSubtitle\`，不写 Program Files。
+- 用户数据（数据库、日志、模型、导出）全部写入 `%LOCALAPPDATA%\字幕君\`，不写 Program Files。
 
 ## 三个必须诚实说明的限制 / Honest caveats
 
 1. **未在目标硬件上验收。** 开发主机（Xeon 6230N）远快于目标笔记本；目标机的 RTF / CPU / 延迟均为**估计值，非实测**。
 2. **UI 端到端实时链路未在本机走通。** 无真实会议播放音频，故“开始→转写→落库”的完整 UI 路径为 BLOCKED（各分层已分别测试；发布 ZIP 已内置模型并被自动识别）。
 3. **无真实会议 3 小时稳定性运行。** `ThreeHourSoak` 从未执行。
-4. **安装包为自签名**（`LocalMeetingSubtitle-Setup.exe` / `Setup.msi`，未获 CA 证书，SmartScreen 仍会警告）；未制作/签名受信任的正式安装包。
+4. **安装包为自签名**（`字幕君-Setup.exe` / `Setup.msi`，未获 CA 证书，SmartScreen 仍会警告）；未制作/签名受信任的正式安装包。
 
 更多细节见 [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) 与 [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)。

@@ -1,6 +1,6 @@
-# Third-Party Notices
+﻿# Third-Party Notices
 
-LocalMeetingSubtitle bundles and/or depends on the following third-party components. Each entry
+字幕君 bundles and/or depends on the following third-party components. Each entry
 lists the component, the version used, its license, and where it is used.
 
 | Component | Version | License | Used for |
@@ -33,5 +33,5 @@ Licenses were verified against the Hugging Face API; see [`MODEL_SELECTION.md`](
 
 ## Project license
 
-LocalMeetingSubtitle itself is released under the **MIT License** (see the root `LICENSE` file).
+字幕君 itself is released under the **MIT License** (see the root `LICENSE` file).
 The third-party components listed above remain governed by their own licenses.

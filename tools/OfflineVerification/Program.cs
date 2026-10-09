@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using LocalMeetingSubtitle.Asr;
 using LocalMeetingSubtitle.ModelDownloads;
 using LocalMeetingSubtitle.Core.Audio;
@@ -18,7 +18,7 @@ string? wav = opts.GetValueOrDefault("wav");
 var results = new List<(string Name, bool Pass, string Detail)>();
 void Check(string name, bool pass, string detail) => results.Add((name, pass, detail));
 
-Console.WriteLine("=== LocalMeetingSubtitle offline verification ===\n");
+Console.WriteLine("=== 字幕君 offline verification ===\n");
 
 // 1. Native sherpa-onnx library loads.
 bool nativeOk = SherpaNativeProbe.TryLoad(out var version, out var nativeErr);
