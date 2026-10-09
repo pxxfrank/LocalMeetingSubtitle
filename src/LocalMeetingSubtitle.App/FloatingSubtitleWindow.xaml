@@ -46,9 +46,9 @@
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
                     <TextBlock TextWrapping="Wrap" Margin="0,4" Foreground="White" LineHeight="{Binding RelativeSource={RelativeSource Self}, Path=FontSize}">
-                        <Run Text="{Binding Timestamp}" Foreground="#E08B6D" FontFamily="Consolas" />
+                        <Run Text="{Binding Timestamp, Mode=OneWay}" Foreground="#E08B6D" FontFamily="Consolas" />
                         <Run Text="   " />
-                        <Run Text="{Binding Text}" />
+                        <Run Text="{Binding Text, Mode=OneWay}" />
                     </TextBlock>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>

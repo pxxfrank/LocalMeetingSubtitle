@@ -180,7 +180,9 @@ public sealed class SherpaOnnxAsrEngine : IAsrEngine
         private readonly IAppLogger _log;
         private readonly OnlineStream _stream;
         private long _acceptedSamples;
+        private long _lastNoResultLogMs;
         private bool _hasDecoded;
+        private bool _everDecoded;
         private bool _emptyResultWarned;
 
         public OnlineSession(OnlineRecognizer recognizer, IAppLogger log)
@@ -202,18 +204,24 @@ public sealed class SherpaOnnxAsrEngine : IAsrEngine
         {
             _recognizer.Decode(_stream);
             _hasDecoded = true;
+            _everDecoded = true;
         }
 
         public AsrDecodeResult GetResult()
         {
             if (!_hasDecoded)
             {
-                // Nothing has been decoded for this stream yet, so there is no hypothesis to read.
+                // Nothing has been decoded since the last Reset, so there is no hypothesis to read.
                 // sherpa-onnx's C# wrapper throws NullReferenceException from OnlineRecognizerResult
                 // in exactly this state, so do not call it.
-                if (!_emptyResultWarned)
+                //
+                // Warn only when the stream has NEVER decoded (a genuinely starved recognizer);
+                // between utterances this branch is simply the normal "nothing new yet" case.
+                long now = Environment.TickCount64;
+                if (!_everDecoded && (!_emptyResultWarned || now - _lastNoResultLogMs >= 10_000))
                 {
                     _emptyResultWarned = true;
+                    _lastNoResultLogMs = now;
                     _log.Warn($"sherpa-onnx stream has not produced a result yet after {_acceptedSamples} "
                               + $"accepted sample(s) (IsReady={SafeIsReady()}); skipping the result read.");
                 }

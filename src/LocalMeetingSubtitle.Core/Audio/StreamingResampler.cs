@@ -48,7 +48,11 @@ public sealed class StreamingResampler
 
         for (int i = 0; i < input.Length; i++) _buffer.Add(input[i]);
 
-        var output = new List<float>((int)(input.Length * _outRate / _inRate) + 8);
+        // Expected output length. Use 64-bit math: input.Length * _outRate overflows Int32 once the
+        // block is longer than ~134k samples (about 3 s at 44.1 kHz), which made the capacity
+        // negative and threw ArgumentOutOfRangeException.
+        int expected = (int)((long)input.Length * _outRate / _inRate) + 8;
+        var output = new List<float>(expected);
 
         while (true)
         {

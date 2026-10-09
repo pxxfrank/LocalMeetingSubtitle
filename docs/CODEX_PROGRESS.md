@@ -316,3 +316,29 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
   makes the next occurrence self-diagnosing (`accepted=N sample(s)` distinguishes "no capture data" from
   "recognizer never ready").
 - Version bumped to **0.3.5**; MSI + Burn bundle + portable ZIP rebuilt and re-signed.
+
+## Update — "video plays but nothing is transcribed": floating-window XAML crash + resampler overflow (v0.3.6) (2026-10-09)
+
+- **Reported:** continuous video playback produced no subtitles at all.
+- **Diagnosis (live):** the level meter moved and the recognizer accepted audio in real time
+  (`accepted=192635 sample(s)` in ~12 s), so capture and decoding were fine. The log was flooded with
+
+  ```
+  XamlParseException: 无法对“SubtitleLineViewModel”类型的只读属性“Timestamp”进行 TwoWay 或 OneWayToSource 绑定
+  ```
+
+  Root cause: `FloatingSubtitleWindow.xaml` bound `Run.Text` to the read-only `Timestamp`, and **`Run.Text`
+  is `BindsTwoWayByDefault`** in WPF. Every rendered subtitle row threw. `OnDispatcherUnhandledException`
+  shows a **modal MessageBox per exception** and marks it handled, so the error/modal loop wedged the UI
+  and the subtitle list never displayed anything.
+  **Fix:** `Mode=OneWay` on both `Run` bindings.
+- **Second defect found while diagnosing:** `StreamingResampler.Process` sized its output list with
+  32-bit arithmetic (`input.Length * _outRate / _inRate`), which overflows for blocks longer than
+  ~134k samples (~3 s at 44.1 kHz) and threw `ArgumentOutOfRangeException`. Now 64-bit.
+- **Noise fix:** the v0.3.5 "stream has not produced a result yet" warning also fired during healthy
+  transcription (between utterances there is nothing new to read). It now only warns if the stream has
+  **never** decoded.
+- **Verified live:** with real WASAPI loopback the subtitle list now renders (`[00:00:00]`, `[00:00:20]`, …)
+  and the `XamlParseException` count is **0**. The captured video audio decodes to Chinese with the real
+  model (RTF ≈ 0.096) via `AsrBenchmark`.
+- Version bumped to **0.3.6**; MSI + Burn bundle + portable ZIP rebuilt and re-signed.
