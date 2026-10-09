@@ -18,6 +18,7 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 | P0 | `.gitignore`'s unanchored `models/` rule also ignored `src/...Core/Models/` (git is case-insensitive on Windows), so the 4 Core model files were **absent from the public repo** | Critical (repo would not build from a clone) | **FIXED** — rule anchored to `/models/`, files committed |
 | P1 | `Controls.xaml` used `{StaticResource IconChevronDown}` before `Icons.xaml` was merged → main window failed to load | High (UI) | **FIXED** (`DynamicResource`) |
 | P2 | Dark theme: stock Aero2 ComboBox/TextBox templates paint a hardcoded white background and ignore `Background`/`SystemColors`, making the text invisible | Medium (UI) | **FIXED** (explicit themed templates) |
+| P0 | The built-in lexicon made hotwords always active, and the hotwords file was written to a **Chinese** temp path (`%TEMP%\字幕君\`) that sherpa-onnx cannot read → the recognizer never became ready and **no subtitles appeared at all** | Critical (silent, total failure of the core flow) | **FIXED** — ASCII temp path + an explicit non-ASCII-path guard in the engine |
 | P3-1 | Subtitle selection is row-level, not character-level | Low | Open |
 | P3-2 | `AppSettings.EnableVadSegmenting` persisted but not wired | Low | Open |
 | P3-3 | `AsrNumThreads` applies at next Start / engine swap, not live | Low | Open |
@@ -29,7 +30,7 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 | P3-9 | Diarization models are downloaded, not bundled in the publish | Low | Open |
 | P3-10 | Real-time + diarization concurrency not measured on target hardware | Low | Open |
 | P3-11 | Built-in lexicon: the bundled zh-14M model cannot encode several lexicon terms | Low | Open |
-| BLOCKED-1 | Full Start→transcribe→persist UI path not exercised | P0 (target) | Blocked (no real audio; model not installed in app data dir) |
+| BLOCKED-1 | Full Start→transcribe→persist UI path | P0 | **CLOSED (2026-10-09, dev host)** — a UI-driven Start on the published build produced and persisted real subtitles |
 | BLOCKED-2 | No real-meeting 3-hour stability run | P0 (target) | Blocked (`ThreeHourSoak` never executed) |
 | BLOCKED-3 | Installer signature is self-signed / untrusted | P1 (release) | Partial (MSI + Setup.exe produced & signed; no CA-issued certificate) |
 
@@ -93,6 +94,26 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 - **Fix:** the mock now consumes exactly one scripted hypothesis per accepted buffer
   (`AcceptWaveform` sets ready once; `Decode` clears it), mimicking a real streaming engine.
 - **Verification:** pipeline long-run tests complete deterministically.
+
+#### P0 — Non-ASCII hotwords path silently disabled recognition entirely *(FIXED)*
+
+- **Symptom:** after adding the built-in lexicon, starting transcription produced **no subtitles at
+  all** — audio was captured (160k+ samples accepted) but the recognizer never became ready
+  (`IsReady=False`), and the bounded self-heal rebuilt the session without effect. Identical signature
+  to the earlier non-ASCII *model* path defect.
+- **Root cause:** `MainViewModel.BuildHotwordFile()` wrote the hotwords file to
+  `%TEMP%\字幕君\hotwords.txt` — a **Chinese** directory. sherpa-onnx opens that file from native code and
+  cannot read a non-ASCII path; the C# wrapper does not surface the failure. Previously the app never
+  produced a hotwords file (0 hotwords → `hotwords=off`), so the latent bug was never triggered; the
+  lexicon made hotwords **always** active, which activated it.
+- **Proof (A/B, `tools/AsrBenchmark`, same audio/model):** the same hotwords file under an **ASCII**
+  path → `RTF=0.0588`, correct text; under a **Chinese** path → `RTF=0.0002`, **empty text**.
+- **Fix:** `ModelHotwordFile.DefaultTempPath` (ASCII, `%TEMP%\SubtitleJun\hotwords.txt`) is now the only
+  hotwords path; and `SherpaOnnxAsrEngine.InitializeAsync` **rejects** a non-ASCII model directory or
+  hotwords path with an explicit error, so this class of failure is loud instead of silent.
+- **Verification:** the published 0.4.0 build, started through the UI, captured loopback audio and
+  **persisted 3 real Chinese subtitle segments** (see BLOCKED-1).
+- **Regression guards:** `ModelHotwordFileTempPathTests` (unit) and `NonAsciiPathGuardTests` (integration).
 
 ## Open limitations (P3 — minor)
 
@@ -199,14 +220,17 @@ following limitations are known and accepted for this version.
 
 ## Blocked / NOT_TESTED items
 
-### BLOCKED-1 — Full Start → transcribe → persist path not exercised in the UI
+### BLOCKED-1 — Full Start → transcribe → persist path — **CLOSED (2026-10-09, dev host)**
 
-- **Why:** no real meeting audio was available on the dev host, and the model was **intentionally not
-  installed** in the application's data directory (`%LOCALAPPDATA%\SubtitleJun\models`), so
-  the UI Start button is correctly disabled (no fake output is produced).
-- **Status:** each layer is tested separately (audio capture probe, decode benchmark, pipeline tests,
-  persistence tests), but the integrated UI path is **BLOCKED / NOT_TESTED** at the UI level.
-- **Impact:** high (it is the core user flow) — must be closed on the target hardware.
+- **Previously blocked because:** no real meeting audio was available on the dev host.
+- **Now exercised:** the **published 0.4.0 build** was launched, the **Start** button invoked through UI
+  Automation, and `test_wavs/0.wav` played through the default render endpoint so WASAPI loopback
+  captured it. Result: session `bb473befdf724f8b820c5bbadd1a9ad9` with **3 persisted segments**
+  (e.g. `#1 [759 ms..11959 ms] 对我做了介绍那么我想说的是…`), `decoding=modified_beam_search, hotwords=on`.
+- **Status:** the integrated UI path now works on the dev host. **Target-hardware acceptance (latency /
+  CPU / 3-hour soak) is still NOT_TESTED** — this closes the "does the app work end-to-end" question, not
+  the performance-acceptance one.
+- **Note:** this run is also what exposed the P0 non-ASCII hotwords-path defect above.
 
 ### BLOCKED-2 — No real-meeting 3-hour stability run
 

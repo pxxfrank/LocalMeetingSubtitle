@@ -594,3 +594,29 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
 - 新增 `BuiltInLexiconTests` 7 例（词表非空/去重、规则可在句内生效、默认合并、关闭后清空、
   用户同名优先、仅凭词表即可生成热词文件、纠正规则命中）。
 - 单元 **148 → 155**；集成 12；性能 3 + 1 跳过；构建 0 错误。
+
+## Update — 真实端到端冒烟：发现并修复非 ASCII 热词路径 P0 (2026-10-09)
+
+**这是本项目第一次真正跑通「开始 → 采集 → 转写 → 落库」的完整 UI 路径**（此前 BLOCKED-1 一直未执行）。
+
+**方法：** 启动**发布版 0.4.0** → 用 UI Automation 点击「开始」→ 通过默认播放设备循环播放
+`test_wavs/0.wav` → WASAPI 回环采集 → 检查日志与数据库。
+
+**首次运行即暴露 P0 回归（词表引入的）：**
+- 现象：`hotwords=on`，采集到 160k+ 采样，但识别器**始终 `IsReady=False`**，**一条字幕都没有**。
+- 根因：`MainViewModel.BuildHotwordFile()` 把热词文件写到 `%TEMP%\字幕君\hotwords.txt`——**中文目录**。
+  sherpa-onnx 原生层无法读取非 ASCII 路径，且 C# 包装层不报错。此前热词为空 → `hotwords=off` → 潜伏未触发；
+  本次内置词表使热词**恒为开启**，于是引爆。
+- **A/B 实证**（同音频同模型）：ASCII 路径 `RTF=0.0588` 且出文本；中文路径 `RTF=0.0002`、**文本为空**。
+- **修复**：热词文件固定写 ASCII 路径 `%TEMP%\SubtitleJun\hotwords.txt`（`ModelHotwordFile.DefaultTempPath`）；
+  并在 `SherpaOnnxAsrEngine.InitializeAsync` **显式拒绝**非 ASCII 的模型目录/热词路径（把静默失败变为明确报错）。
+- **回归防线**：`ModelHotwordFileTempPathTests`（单元）、`NonAsciiPathGuardTests`（集成）。
+
+**修复后复跑（发布版）：**
+- 日志：`decoding=modified_beam_search, hotwords=on`；热词文件 116 行。
+- **数据库落库 3 条真实中文字幕**（会话 `bb473befdf724f8b820c5bbadd1a9ad9`）：
+  `#1 [0.8–12.0s] 对我做了介绍那么我想说的是…`、`#2 [12.3–23.1s] …`、`#3 [23.4–34.4s] …`。
+- → **BLOCKED-1（P0）关闭**；AC-06 由 PARTIAL/BLOCKED 改为 **PASS (dev host)**。
+
+### 测试
+- 单元 **155 → 157**；集成 **12 → 14**；性能 3 + 1 跳过；构建 0 错误。

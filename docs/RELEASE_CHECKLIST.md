@@ -18,7 +18,7 @@ Legend: `PASS` = verified with evidence · `PARTIAL` = some sub-checks pass, oth
 | AC-03 | 单元测试全部通过 | `dotnet test …UnitTests…` | 全通过 | 136 通过 / 0 失败 | 测试输出 | 开发主机 | **PASS** |
 | AC-04 | 目标硬件上的实时字幕时延/吞吐达标 | 目标机运行真实会议并测量 | 首字 ≤1.5 s、结尾 ≤1 s | 未执行 | — | 目标硬件 | **NOT_TESTED** |
 | AC-05 | 目标硬件上的 CPU/内存占用达标 | 目标机运行并采样 `ProcessPerformanceMonitor` | CPU ≤25%、内存 ≤1 GB | 未执行 | — | 目标硬件 | **NOT_TESTED** |
-| AC-06 | 端到端实时转写（UI：开始→转写→落库） | 应用内点击开始播放真实会议音频 | 连续实时字幕并写入数据库 | 解码层 PASS（`AsrBenchmark` 真实模型出文本）；UI 端到端未走通（无真实音频、应用数据目录内未装模型） | AsrBenchmark 输出；`MainViewModel` 逻辑 | 开发主机 | **PARTIAL/BLOCKED** |
+| AC-06 | 端到端实时转写（UI：开始→转写→落库） | 应用内点击开始播放真实会议音频 | 连续实时字幕并写入数据库 | **已走通（2026-10-09）**：发布版 0.4.0 经 UI 自动化点击「开始」，WASAPI 回环采集所播放音频 → **落库 3 条真实中文字幕**（会话 `bb473bef…`，`decoding=modified_beam_search, hotwords=on`）；该次运行同时暴露并修复了「非 ASCII 热词路径」P0 | `KNOWN_ISSUES` BLOCKED-1（已关闭） | 开发主机 | **PASS (dev host)** |
 | AC-07 | 真实模型可从样例音频解码出中文文本 | `AsrBenchmark`/`RealModelTests`（`test_wavs`） | 产出中文文本 | `test_wavs/0.wav`、`1.wav` 均产出中文文本 | 见 `MODEL_SELECTION.md` 基准表 | 开发主机 | **PASS** |
 | AC-08 | 端到端时延指标可被采集 | 采样 `EndToEndLatencyMs` | 能报告延迟 | 指标链路已实现；未在真实会议中验证目标阈值 | `IPerformanceMonitor` / pipeline `ReportLatency` | 开发主机 | **PARTIAL** |
 | AC-09 | 长时间稳定性（≥3 小时） | 运行 `ThreeHourSoak` | 无崩溃、序号单调、无丢帧 | 从未执行 | `SoakTests.ThreeHourSoak`（Skip） | — | **NOT_TESTED** |

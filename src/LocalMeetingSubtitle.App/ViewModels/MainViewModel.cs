@@ -7,6 +7,7 @@ using LocalMeetingSubtitle.ModelDownloads;
 using LocalMeetingSubtitle.Audio;
 using LocalMeetingSubtitle.Core.Abstractions;
 using LocalMeetingSubtitle.Core.Audio;
+using LocalMeetingSubtitle.Core.Hotwords;
 using LocalMeetingSubtitle.Core.Models;
 using LocalMeetingSubtitle.Core.Transcription;
 using LocalMeetingSubtitle.Storage;
@@ -1428,13 +1429,14 @@ public sealed class MainViewModel : ObservableObject
     // Helpers
     // =====================================================================
 
-    /// <summary>Writes the model-level hotwords file to a temp path (null when not applicable).</summary>
+    /// <summary>Writes the model-level hotwords file to an ASCII temp path (null when not applicable).</summary>
     public string? BuildHotwordFile()
     {
         try
         {
-            var dir = Path.Combine(Path.GetTempPath(), "字幕君");
-            var path = Path.Combine(dir, "hotwords.txt");
+            // ModelHotwordFile.DefaultTempPath is ASCII by construction: sherpa-onnx cannot read a
+            // non-ASCII path, and a non-ASCII directory here silently kills recognition entirely.
+            var path = ModelHotwordFile.DefaultTempPath;
             return _hotwordService.WriteModelHotwordFile(path);
         }
         catch (Exception ex)

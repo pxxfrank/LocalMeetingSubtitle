@@ -9,6 +9,20 @@ namespace LocalMeetingSubtitle.Core.Hotwords;
 /// </summary>
 public static class ModelHotwordFile
 {
+    /// <summary>
+    /// Default temp path for the model-level hotwords file.
+    ///
+    /// <para><b>The directory name MUST be ASCII.</b> sherpa-onnx opens the file from native code and
+    /// cannot read a non-ASCII path; the C# wrapper does not surface the failure, so the recognizer is
+    /// constructed but never becomes ready and the app silently produces no subtitles (verified A/B:
+    /// the same hotwords file under a Chinese directory gives an empty result and RTF ~0.0002).</para>
+    /// </summary>
+    public static string DefaultTempPath { get; } =
+        Path.Combine(Path.GetTempPath(), "SubtitleJun", "hotwords.txt");
+
+    /// <summary>True when every character of the path is ASCII (the constraint native sherpa code requires).</summary>
+    public static bool IsAsciiPath(string path) => path.All(char.IsAscii);
+
     public static string FormatToken(string phrase)
     {
         var sb = new StringBuilder(phrase.Length * 2);

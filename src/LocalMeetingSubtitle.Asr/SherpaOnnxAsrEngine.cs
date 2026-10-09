@@ -1,4 +1,5 @@
 using LocalMeetingSubtitle.Core.Abstractions;
+using LocalMeetingSubtitle.Core.Hotwords;
 using LocalMeetingSubtitle.Core.Models;
 using SherpaOnnx;
 
@@ -34,6 +35,21 @@ public sealed class SherpaOnnxAsrEngine : IAsrEngine
         {
             return Task.FromResult(new AsrInitResult(AsrInitStatus.ModelNotFound,
                 "Model file(s) not found: " + string.Join(", ", missing.Select(Path.GetFileName))));
+        }
+
+        // sherpa-onnx opens model/hotword files from C++ and cannot read a non-ASCII path. The failure
+        // is silent (the native call does not throw; the recognizer simply never becomes ready), which
+        // previously surfaced to users as "有声音但不出字". Reject it explicitly instead.
+        if (!ModelHotwordFile.IsAsciiPath(options.ModelDirectory))
+        {
+            return Task.FromResult(new AsrInitResult(AsrInitStatus.Failed,
+                "模型路径包含非 ASCII 字符，sherpa-onnx 无法读取 / model path is not ASCII: " + options.ModelDirectory));
+        }
+
+        if (!string.IsNullOrEmpty(options.HotwordsFile) && !ModelHotwordFile.IsAsciiPath(options.HotwordsFile))
+        {
+            return Task.FromResult(new AsrInitResult(AsrInitStatus.Failed,
+                "热词文件路径包含非 ASCII 字符，sherpa-onnx 无法读取 / hotwords path is not ASCII: " + options.HotwordsFile));
         }
 
         if (!SherpaNativeProbe.TryLoad(out var version, out var nativeError))
