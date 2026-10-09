@@ -295,3 +295,24 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
   real preprocessor, post-`Reset` reads, empty `AcceptWaveform`, speech+silence endpointing) all pass and
   were removed.
 - Version bumped to **0.3.4**; MSI + Burn bundle + portable ZIP rebuilt and re-signed.
+
+## Update — "Recognition error" root cause: reading a result that was never computed (v0.3.5) (2026-10-09)
+
+- **Live evidence obtained.** Running the installed build with real capture logged:
+
+  ```
+  [WARN] sherpa-onnx GetResult returned no result (IsReady=False, accepted=155 samples)
+  ```
+
+  i.e. the stream had **not decoded once** (`IsReady()==false`, so the `while (IsReady()) Decode()` loop
+  never ran) and `GetResult()` was then called anyway. The sherpa-onnx C# wrapper has no result to read in
+  that state and throws `NullReferenceException` from `OnlineRecognizerResult(IntPtr)`.
+- **Fix:** `OnlineSession` now only reads a result **after at least one `Decode()`** (`_hasDecoded`, cleared
+  by `Reset()`); until then it returns an empty hypothesis without calling the throwing API. The first
+  occurrence logs a WARN with the accepted-sample count and `IsReady`; it no longer floods the log.
+- **Ruled out small blocks as the cause:** probes feeding 155 / 320 / 800 / 1600-sample blocks all reached
+  `IsReady()==true` after ~0.42 s of audio. The trigger is reading a result before the stream is ready.
+- **Still not deterministically reproducible** end-to-end: most live runs transcribe correctly. The log now
+  makes the next occurrence self-diagnosing (`accepted=N sample(s)` distinguishes "no capture data" from
+  "recognizer never ready").
+- Version bumped to **0.3.5**; MSI + Burn bundle + portable ZIP rebuilt and re-signed.

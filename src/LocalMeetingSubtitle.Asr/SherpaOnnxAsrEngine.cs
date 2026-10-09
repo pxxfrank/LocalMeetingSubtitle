@@ -179,6 +179,8 @@ public sealed class SherpaOnnxAsrEngine : IAsrEngine
         private readonly OnlineRecognizer _recognizer;
         private readonly IAppLogger _log;
         private readonly OnlineStream _stream;
+        private long _acceptedSamples;
+        private bool _hasDecoded;
         private bool _emptyResultWarned;
 
         public OnlineSession(OnlineRecognizer recognizer, IAppLogger log)
@@ -189,13 +191,36 @@ public sealed class SherpaOnnxAsrEngine : IAsrEngine
         }
 
         public void AcceptWaveform(ReadOnlySpan<float> samples, int sampleRate)
-            => _stream.AcceptWaveform(sampleRate, samples.ToArray());
+        {
+            _acceptedSamples += samples.Length;
+            _stream.AcceptWaveform(sampleRate, samples.ToArray());
+        }
 
         public bool IsReady() => _recognizer.IsReady(_stream);
-        public void Decode() => _recognizer.Decode(_stream);
+
+        public void Decode()
+        {
+            _recognizer.Decode(_stream);
+            _hasDecoded = true;
+        }
 
         public AsrDecodeResult GetResult()
         {
+            if (!_hasDecoded)
+            {
+                // Nothing has been decoded for this stream yet, so there is no hypothesis to read.
+                // sherpa-onnx's C# wrapper throws NullReferenceException from OnlineRecognizerResult
+                // in exactly this state, so do not call it.
+                if (!_emptyResultWarned)
+                {
+                    _emptyResultWarned = true;
+                    _log.Warn($"sherpa-onnx stream has not produced a result yet after {_acceptedSamples} "
+                              + $"accepted sample(s) (IsReady={SafeIsReady()}); skipping the result read.");
+                }
+
+                return new AsrDecodeResult("", false);
+            }
+
             try
             {
                 var result = _recognizer.GetResult(_stream);
@@ -204,21 +229,8 @@ public sealed class SherpaOnnxAsrEngine : IAsrEngine
             }
             catch (NullReferenceException)
             {
-                // sherpa-onnx's C# wrapper throws from OnlineRecognizerResult(IntPtr) when the native
-                // call yields no result for the stream. That has been observed with live capture and
-                // never with offline audio. There is simply no hypothesis for this chunk, so report an
-                // empty one rather than tearing down recognition with a NullReferenceException.
-                if (!_emptyResultWarned)
-                {
-                    _emptyResultWarned = true;
-                    _log.Warn($"sherpa-onnx GetResult returned no result (IsReady={SafeIsReady()}); "
-                              + "treating the chunk as empty and continuing.");
-                }
-                else
-                {
-                    _log.Debug("sherpa-onnx GetResult returned no result again; treated as empty.");
-                }
-
+                // Belt and braces: the wrapper can also throw for a decoded-but-empty stream.
+                _log.Debug("sherpa-onnx GetResult returned no result for a decoded stream; treated as empty.");
                 return new AsrDecodeResult("", false);
             }
         }
@@ -229,7 +241,11 @@ public sealed class SherpaOnnxAsrEngine : IAsrEngine
             catch { return false; }
         }
 
-        public void Reset() => _recognizer.Reset(_stream);
+        public void Reset()
+        {
+            _recognizer.Reset(_stream);
+            _hasDecoded = false;
+        }
         public void InputFinished() => _stream.InputFinished();
         public void Dispose() => _stream.Dispose();
     }

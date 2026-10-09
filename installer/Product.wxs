@@ -8,7 +8,7 @@
   -->
   <Package Name="字幕君"
            Manufacturer="字幕君"
-           Version="0.3.4"
+           Version="0.3.5"
            UpgradeCode="b7e1c2d3-4a5f-4e6b-9c8d-1f2a3b4c5d6e"
            Scope="perUser"
            Compressed="yes">
