@@ -13,7 +13,7 @@
     </BootstrapperApplication>
 
     <Chain>
-      <MsiPackage SourceFile="dist/字幕君-Setup.msi" Compressed="yes" Vital="yes" />
+      <MsiPackage SourceFile="dist/SubtitleJun-Setup.msi" Compressed="yes" Vital="yes" />
     </Chain>
 
   </Bundle>

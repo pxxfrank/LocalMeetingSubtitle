@@ -18,7 +18,7 @@
   as models\<name>\ lost their parent. This version builds the complete, nested tree.
 #>
 param(
-    [string]$AppFiles = "dist/字幕君-win-x64",
+    [string]$AppFiles = "dist/SubtitleJun-win-x64",
     [string]$OutFile  = "installer/GeneratedFiles.wxs"
 )
 

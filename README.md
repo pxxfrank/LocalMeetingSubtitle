@@ -44,11 +44,11 @@ dotnet run --project src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.cspro
 
 # 5) 生成自包含发布产物
 dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj `
-    -c Release -r win-x64 --self-contained true -o dist/字幕君-win-x64
+    -c Release -r win-x64 --self-contained true -o dist/SubtitleJun-win-x64
 ```
 
 首次启动后：选择音频设备 → 点击 **开始 / Start** → 播放任意会议声音即可看到实时字幕。
-发布包运行：解压 `dist/字幕君-win-x64`，双击 `字幕君.exe`。
+发布包运行：解压 `dist/SubtitleJun-win-x64`，双击 `字幕君.exe`。
 
 ## 项目结构 / Project layout
 
@@ -106,6 +106,6 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj `
 1. **未在目标硬件上验收。** 开发主机（Xeon 6230N）远快于目标笔记本；目标机的 RTF / CPU / 延迟均为**估计值，非实测**。
 2. **UI 端到端实时链路未在本机走通。** 无真实会议播放音频，故“开始→转写→落库”的完整 UI 路径为 BLOCKED（各分层已分别测试；发布 ZIP 已内置模型并被自动识别）。
 3. **无真实会议 3 小时稳定性运行。** `ThreeHourSoak` 从未执行。
-4. **安装包为自签名**（`字幕君-Setup.exe` / `Setup.msi`，未获 CA 证书，SmartScreen 仍会警告）；未制作/签名受信任的正式安装包。
+4. **安装包为自签名**（`SubtitleJun-Setup.exe` / `Setup.msi`，未获 CA 证书，SmartScreen 仍会警告）；未制作/签名受信任的正式安装包。
 
 更多细节见 [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) 与 [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)。
