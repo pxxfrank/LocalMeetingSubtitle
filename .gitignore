@@ -36,3 +36,6 @@ appsettings.local.json
 # OS
 Thumbs.db
 desktop.ini
+
+# Stray capture output
+*.wav
