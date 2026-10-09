@@ -229,3 +229,17 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
   to be non-ASCII-safe.
 - Version bumped to **0.3.1**; MSI + Burn bundle + portable ZIP rebuilt with the ASR model bundled
   (parity with 0.3.0) and re-signed (bundle intentionally unsigned).
+
+## Update — release artifacts + auto-migration of the data folder (v0.3.2) (2026-10-09)
+
+- **Release asset names must be ASCII:** GitHub silently drops non-ASCII characters from release asset
+  file names (`字幕君-Setup.exe` was published as `-Setup.exe`). The distribution artifacts are therefore
+  `SubtitleJun-Setup.exe` / `SubtitleJun-Setup.msi` / `SubtitleJun-win-x64.zip`; the app's own display name
+  and its executable (`字幕君.exe`) stay Chinese.
+- **One-time automatic migration of the user data folder.** Because 0.3.1 moved the data folder to
+  `%LOCALAPPDATA%\字幕君\`, `LocalDataPaths.MigrateLegacyFolderIfNeeded` now moves anything left in
+  `%LOCALAPPDATA%\LocalMeetingSubtitle\` into the new folder on first launch. It only runs when the new
+  folder is absent or empty (so it never merges over live data), moves each top-level entry separately so a
+  single locked file cannot abort it, and deletes the legacy folder once it is empty. Covered by four unit
+  tests (`LocalDataPathsMigrationTests`); unit suite now 116 tests.
+- Version bumped to **0.3.2**; MSI + Burn bundle + portable ZIP rebuilt and re-signed.

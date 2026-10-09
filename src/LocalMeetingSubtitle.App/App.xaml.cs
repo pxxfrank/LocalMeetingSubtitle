@@ -36,8 +36,11 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        var migratedEntries = 0;
         try
         {
+            // Move data left behind by the pre-rename folder (%LOCALAPPDATA%\LocalMeetingSubtitle).
+            migratedEntries = LocalDataPaths.MigrateLegacyFolderIfNeeded();
             LocalDataPaths.EnsureAllDirectories();
         }
         catch
@@ -46,6 +49,12 @@ public partial class App : Application
         }
 
         _logger = new FileLogger(LocalDataPaths.EnsureLogsDirectory());
+        if (migratedEntries > 0)
+        {
+            _logger.Info($"Migrated {migratedEntries} item(s) from the legacy data folder "
+                         + $"'%LOCALAPPDATA%\\{LocalDataPaths.LegacyAppFolderName}' to '{LocalDataPaths.Root}'.");
+        }
+
         RegisterExceptionHandlers();
 
         _singleInstance = new SingleInstanceGuard(MutexName);
