@@ -1,21 +1,25 @@
-﻿namespace LocalMeetingSubtitle.Storage;
+namespace LocalMeetingSubtitle.Storage;
 
 /// <summary>
 /// Resolves the per-user writable data directory for the application. Everything the app
-/// persists lives under <c>%LOCALAPPDATA%\字幕君\</c> so it never touches
-/// Program Files (which is read-only for standard users).
+/// persists lives under <c>%LOCALAPPDATA%\SubtitleJun\</c> so it never touches Program Files
+/// (which is read-only for standard users).
+///
+/// The folder name is deliberately **ASCII**: sherpa-onnx's native layer cannot open model files
+/// under a path with non-ASCII characters (it logs "Errors in config!" and builds a recognizer
+/// that never decodes). The product's display name is still 字幕君 — only on-disk paths are ASCII.
 /// </summary>
 public static class LocalDataPaths
 {
-    public const string AppFolderName = "字幕君";
+    public const string AppFolderName = "SubtitleJun";
 
     /// <summary>
-    /// Folder name used before the app was renamed to 字幕君. Kept only so an existing installation's
-    /// data can be moved across once; see <see cref="MigrateLegacyFolderIfNeeded"/>.
+    /// Folder names used by earlier versions, newest first. Data is moved out of whichever of these
+    /// exists so an upgrade keeps the user's history.
     /// </summary>
-    public const string LegacyAppFolderName = "LocalMeetingSubtitle";
+    public static readonly string[] LegacyAppFolderNames = { "字幕君", "LocalMeetingSubtitle" };
 
-    /// <summary>The per-user root: <c>%LOCALAPPDATA%\字幕君</c>.</summary>
+    /// <summary>The per-user root: <c>%LOCALAPPDATA%\SubtitleJun</c>.</summary>
     public static string Root { get; } = ResolveRoot();
 
     public static string DatabaseFile => Path.Combine(Root, "subtitles.db");
@@ -57,10 +61,10 @@ public static class LocalDataPaths
     }
 
     /// <summary>
-    /// One-time move of user data from <see cref="LegacyAppFolderName"/> to <see cref="AppFolderName"/>.
-    /// It runs only when the current folder is missing or empty (so it never merges on top of live data)
-    /// and moves each top-level entry separately, so one locked file cannot abort the whole migration.
-    /// Returns the number of entries moved; 0 means there was nothing to do.
+    /// One-time move of user data from any <see cref="LegacyAppFolderNames"/> folder to
+    /// <see cref="AppFolderName"/>. It runs only when the current folder is missing or empty (so it
+    /// never merges on top of live data) and moves each top-level entry separately, so one locked
+    /// file cannot abort the whole migration. Returns the number of entries moved.
     /// </summary>
     /// <param name="localAppDataRoot">Base directory to migrate inside; defaults to the real %LOCALAPPDATA%.</param>
     public static int MigrateLegacyFolderIfNeeded(string? localAppDataRoot = null)
@@ -74,18 +78,29 @@ public static class LocalDataPaths
             return 0;
         }
 
-        var legacy = Path.Combine(baseDir, LegacyAppFolderName);
-        if (!Directory.Exists(legacy))
-        {
-            return 0;
-        }
-
         var current = Path.Combine(baseDir, AppFolderName);
         if (Directory.Exists(current) && Directory.EnumerateFileSystemEntries(current).Any())
         {
             return 0;
         }
 
+        var moved = 0;
+        foreach (var legacyName in LegacyAppFolderNames)
+        {
+            var legacy = Path.Combine(baseDir, legacyName);
+            if (!Directory.Exists(legacy))
+            {
+                continue;
+            }
+
+            moved += MoveContents(legacy, current);
+        }
+
+        return moved;
+    }
+
+    private static int MoveContents(string legacy, string current)
+    {
         Directory.CreateDirectory(current);
 
         var moved = 0;

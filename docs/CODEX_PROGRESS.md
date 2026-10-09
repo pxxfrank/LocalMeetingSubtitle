@@ -67,7 +67,7 @@ See [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
 1. **Target-hardware acceptance.** On the Windows 11 laptop (Core Ultra 7 155H, Arc, AI Boost):
    install and run, measure RTF / CPU / memory / first-and-final latency, and record results.
 2. **Install the model into the app data directory and run a real meeting.** Copy/download the model
-   into `%LOCALAPPDATA%\字幕君\models` and exercise the full UI path (Start → live
+   into `%LOCALAPPDATA%\SubtitleJun\models` and exercise the full UI path (Start → live
    subtitles → DB), closing BLOCKED-1.
 3. **Run the 3-hour soak** (`ThreeHourSoak`) on a real meeting-like load; close BLOCKED-2.
 4. **Benchmark candidate B/C** (bilingual zh-en; SenseVoice) on the target machine and finalise the
@@ -96,8 +96,8 @@ dotnet test tests/LocalMeetingSubtitle.PerformanceTests/LocalMeetingSubtitle.Per
 
 # Model management (install into the app data dir)
 dotnet run --project tools/ModelManager -- list
-dotnet run --project tools/ModelManager -- install --id streaming-zipformer-zh-14M --models-root "$env:LOCALAPPDATA\字幕君\models"
-dotnet run --project tools/ModelManager -- verify --models-root "$env:LOCALAPPDATA\字幕君\models"
+dotnet run --project tools/ModelManager -- install --id streaming-zipformer-zh-14M --models-root "$env:LOCALAPPDATA\SubtitleJun\models"
+dotnet run --project tools/ModelManager -- verify --models-root "$env:LOCALAPPDATA\SubtitleJun\models"
 
 # Real-model benchmark
 dotnet run --project tools/AsrBenchmark -- --wav models/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/test_wavs/0.wav --threads 4
@@ -117,7 +117,7 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
 ## Update — portable model bundling + acceptance re-run (2026-10-08)
 
 - **Defect found & fixed (P2, usability):** the app only looked for models in
-  `%LOCALAPPDATA%\字幕君\models`, so the model bundled inside the release ZIP was not
+  `%LOCALAPPDATA%\SubtitleJun\models`, so the model bundled inside the release ZIP was not
   detected. `ResolveModelsRoot()` now prefers `<app>\models` when it exists, otherwise the per-user
   directory. Verified: after extracting `dist/字幕君-win-x64.zip` to a clean folder and
   running `字幕君.exe`, the log shows:
@@ -217,7 +217,7 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
   subtitle window (`字幕君 悬浮字幕`), all message boxes, the executable (`字幕君.exe`), the installer product
   name and install directory (`%LOCALAPPDATA%\Programs\字幕君`), the Start-menu folder and shortcut, the
   uninstall registry key, and the release artifacts (`字幕君-Setup.*`, `字幕君-win-x64.zip`).
-- The **user data directory** moved to `%LOCALAPPDATA%\字幕君\` (database / logs / models / exports).
+- The **user data directory** moved to `%LOCALAPPDATA%\SubtitleJun\` (database / logs / models / exports).
   There is **no automatic migration** — existing data must be moved manually.
 - Internal identifiers (assembly names `LocalMeetingSubtitle.*`, namespaces, project folders, `.sln`) were
   intentionally left unchanged; users never see them.
@@ -237,7 +237,7 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
   `SubtitleJun-Setup.exe` / `SubtitleJun-Setup.msi` / `SubtitleJun-win-x64.zip`; the app's own display name
   and its executable (`字幕君.exe`) stay Chinese.
 - **One-time automatic migration of the user data folder.** Because 0.3.1 moved the data folder to
-  `%LOCALAPPDATA%\字幕君\`, `LocalDataPaths.MigrateLegacyFolderIfNeeded` now moves anything left in
+  `%LOCALAPPDATA%\SubtitleJun\`, `LocalDataPaths.MigrateLegacyFolderIfNeeded` now moves anything left in
   `%LOCALAPPDATA%\LocalMeetingSubtitle\` into the new folder on first launch. It only runs when the new
   folder is absent or empty (so it never merges over live data), moves each top-level entry separately so a
   single locked file cannot abort it, and deletes the legacy folder once it is empty. Covered by four unit
@@ -384,3 +384,28 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
 - **UI:** the chip now reads `已采集 N.Ns 音频，识别器未就绪（正在自动重建会话）`.
 - Unit **116** + integration **10** pass; the healthy path still starts decoding within 0.42 s.
 - Version bumped to **0.3.8**; MSI + Burn bundle + portable ZIP rebuilt and re-signed.
+
+## Update — ROOT CAUSE of "sound but no subtitles": non-ASCII model path (v0.3.9) (2026-10-09)
+
+- **Proven with a controlled experiment.** The same audio and the same model files, only the path differs:
+
+  | model dir | result |
+  | --- | --- |
+  | `G:\...\models\sherpa-onnx-...` (ASCII) | `TEXT=对我做了介绍那么我想说的是大家如果对我的研究感兴趣呢` |
+  | `C:\...\Programs\字幕君\models\sherpa-onnx-...` | native prints `c-api.cc:SherpaOnnxCreateOnlineRecognizer:214 Errors in config!`, `TEXT=` (empty) |
+
+  **sherpa-onnx's native layer cannot open model files under a non-ASCII path.** The C# wrapper does
+  **not** surface the failure (`AsrInitStatus.Success`), so the app happily starts capturing while the
+  recognizer is permanently unusable (`IsReady()` never true) — exactly the reported symptom.
+- **Fix:** every on-disk path is ASCII again while the product name stays 字幕君:
+  - install dir `%LOCALAPPDATA%\Programs\字幕君` → `%LOCALAPPDATA%\Programs\SubtitleJun`;
+  - data dir `%LOCALAPPDATA%\字幕君\` → `%LOCALAPPDATA%\SubtitleJun\`;
+  - the Start-menu folder and shortcut still *display* 字幕君 (shell names only — native code never reads
+    them), and the executable is still `字幕君.exe` (native code never reads it either).
+  - `MigrateLegacyFolderIfNeeded` now moves data out of **either** legacy folder (`字幕君`,
+    `LocalMeetingSubtitle`) so upgrades keep history.
+- **Guard:** if the models path still contains non-ASCII characters (e.g. a Chinese Windows user name in
+  `%LOCALAPPDATA%`), the footer chip now says so explicitly instead of silently producing nothing.
+- Tests: unit suite 116 → **118** (migration from both legacy names, plus an assertion that the current
+  folder name is ASCII); integration 10.
+- Version bumped to **0.3.9**; MSI + Burn bundle + portable ZIP rebuilt and re-signed.

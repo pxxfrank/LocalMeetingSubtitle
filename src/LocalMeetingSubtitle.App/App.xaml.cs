@@ -51,8 +51,7 @@ public partial class App : Application
         _logger = new FileLogger(LocalDataPaths.EnsureLogsDirectory());
         if (migratedEntries > 0)
         {
-            _logger.Info($"Migrated {migratedEntries} item(s) from the legacy data folder "
-                         + $"'%LOCALAPPDATA%\\{LocalDataPaths.LegacyAppFolderName}' to '{LocalDataPaths.Root}'.");
+            _logger.Info($"Migrated {migratedEntries} item(s) from a legacy data folder to '{LocalDataPaths.Root}'.");
         }
 
         RegisterExceptionHandlers();

@@ -126,7 +126,7 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 ### BLOCKED-1 — Full Start → transcribe → persist path not exercised in the UI
 
 - **Why:** no real meeting audio was available on the dev host, and the model was **intentionally not
-  installed** in the application's data directory (`%LOCALAPPDATA%\字幕君\models`), so
+  installed** in the application's data directory (`%LOCALAPPDATA%\SubtitleJun\models`), so
   the UI Start button is correctly disabled (no fake output is produced).
 - **Status:** each layer is tested separately (audio capture probe, decode benchmark, pipeline tests,
   persistence tests), but the integrated UI path is **BLOCKED / NOT_TESTED** at the UI level.

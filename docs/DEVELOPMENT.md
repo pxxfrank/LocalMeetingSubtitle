@@ -60,7 +60,7 @@ tools/
   OfflineVerification                 5 offline-capability checks
 ```
 
-Runtime data lives under `%LOCALAPPDATA%\字幕君\` (`subtitles.db`, `logs\`, `models\`,
+Runtime data lives under `%LOCALAPPDATA%\SubtitleJun\` (`subtitles.db`, `logs\`, `models\`,
 `exports\`). The repository's `models/` and `dist/` directories are git-ignored.
 
 ## 4. Working with models
@@ -78,15 +78,15 @@ dotnet run --project tools/ModelManager -- install --id streaming-zipformer-zh-1
 
 # Install into the APPLICATION data dir so the app can use it
 dotnet run --project tools/ModelManager -- install --id streaming-zipformer-zh-14M `
-    --models-root "$env:LOCALAPPDATA\字幕君\models"
+    --models-root "$env:LOCALAPPDATA\SubtitleJun\models"
 
 # Verify presence (and list any missing files)
-dotnet run --project tools/ModelManager -- verify --models-root "$env:LOCALAPPDATA\字幕君\models"
+dotnet run --project tools/ModelManager -- verify --models-root "$env:LOCALAPPDATA\SubtitleJun\models"
 ```
 
 - **Default models root:** the tool walks up from its own directory to find the solution
   (`*.sln`) and uses `models/` beside it; override with `--models-root <path>`.
-- **App models root:** the application always uses `%LOCALAPPDATA%\字幕君\models`.
+- **App models root:** the application always uses `%LOCALAPPDATA%\SubtitleJun\models`.
   To let the app start, install the model there (see above).
 - **Adding a *new* model** (one not already in the catalog) requires adding a `ModelDescriptor` to
   `AsrModelCatalog.cs` (file names, URLs, license, hotword support) — this is a **code change**, so it

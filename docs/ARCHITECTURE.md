@@ -101,7 +101,7 @@ flushed and persisted first, then the engine/session are replaced — capture is
 
 ## 4. Persistence (SQLite)
 
-- File: `%LOCALAPPDATA%\字幕君\subtitles.db`; PRAGMA `journal_mode=WAL`,
+- File: `%LOCALAPPDATA%\SubtitleJun\subtitles.db`; PRAGMA `journal_mode=WAL`,
   `foreign_keys=ON`, `synchronous=NORMAL`. Connection pooling disabled so the file (and `-wal`/`-shm`)
   is deletable after close.
 - Versioned migrations (`schema_version` table) run each in its own transaction.

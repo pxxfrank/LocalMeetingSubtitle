@@ -1011,6 +1011,15 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
+        // sherpa-onnx's native layer cannot read model files from a non-ASCII path, so warn before
+        // the recognizer silently produces nothing.
+        var modelsRoot = _modelManager.ModelsRoot;
+        if (!string.IsNullOrEmpty(modelsRoot) && modelsRoot.Any(c => c > 127))
+        {
+            SetAudioHealth("模型路径含非 ASCII 字符，无法识别 — 请把程序与数据放到纯英文路径 / model path is non-ASCII", true);
+            return;
+        }
+
         var pipeline = _pipeline;
         if (pipeline is null)
         {

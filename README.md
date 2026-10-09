@@ -14,7 +14,7 @@
 
 - 通过 **WASAPI loopback** 捕获系统播放（扬声器/耳机）声音，无需麦克风、无需虚拟声卡。
 - 使用 **sherpa-onnx**（流式 zipformer / 离线 SenseVoice）在本地进行语音识别，输出中文实时字幕。
-- 字幕**只保存在本机**（`%LOCALAPPDATA%\字幕君\`），提供置顶悬浮字幕、搜索、热词、文本纠正与 TXT/SRT/Markdown 导出。
+- 字幕**只保存在本机**（`%LOCALAPPDATA%\SubtitleJun\`），提供置顶悬浮字幕、搜索、热词、文本纠正与 TXT/SRT/Markdown 导出。
 - 运行期**不发起任何网络请求**：唯一引用 `System.Net.Http` 的 `ModelDownloads` 程序集与识别链路隔离，可静态验证（见“离线保证”）。
 
 技术栈：.NET 8 / WPF（`net8.0-windows`，x64，**Claude 风格极简界面**：自绘主题 + 线性图标，支持**明/暗主题实时切换**，不依赖任何第三方 UI 框架）、NAudio 2.2.1、sherpa-onnx 1.13.8、Microsoft.Data.Sqlite 8.0.31（WAL）。
@@ -37,7 +37,7 @@ dotnet test tests/LocalMeetingSubtitle.PerformanceTests/LocalMeetingSubtitle.Per
 
 # 3) 安装模型到应用数据目录（应用从 %LOCALAPPDATA% 读取模型）
 dotnet run --project tools/ModelManager -- install --id streaming-zipformer-zh-14M `
-    --models-root "$env:LOCALAPPDATA\字幕君\models"
+    --models-root "$env:LOCALAPPDATA\SubtitleJun\models"
 
 # 4) 运行（开发态）
 dotnet run --project src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c Debug
@@ -99,7 +99,7 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj `
 
 - 运行期识别链路（`Core` / `Asr` / `Audio` / `Storage` 程序集）**不引用** `System.Net.Http` 或任何 `System.Net.*`；网络能力被隔离在 `ModelDownloads` 程序集中，仅用于开发/安装期下载模型。
 - `tools/OfflineVerification` 校验 **5/5 PASS**：原生库加载、无网络引用、数据目录位于 `%LOCALAPPDATA%`、模型文件存在、离线解码产出文本。
-- 用户数据（数据库、日志、模型、导出）全部写入 `%LOCALAPPDATA%\字幕君\`，不写 Program Files。
+- 用户数据（数据库、日志、模型、导出）全部写入 `%LOCALAPPDATA%\SubtitleJun\`，不写 Program Files。
 
 ## 三个必须诚实说明的限制 / Honest caveats
 
