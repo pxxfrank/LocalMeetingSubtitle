@@ -71,6 +71,7 @@ public sealed class TranscriptionPipeline : IAsyncDisposable
     private long _framesReceived;
     private long _lastFrameTicks;
     private long _decodes;
+    private bool _sessionRebuilt;
     private double _lastInferenceMs;
     private readonly object _swapGate = new();
     private IAsrEngine? _pendingSwap;
@@ -141,6 +142,7 @@ public sealed class TranscriptionPipeline : IAsyncDisposable
         Interlocked.Exchange(ref _framesReceived, 0);
         Interlocked.Exchange(ref _lastFrameTicks, 0);
         Interlocked.Exchange(ref _decodes, 0);
+        _sessionRebuilt = false;
         _cts = new CancellationTokenSource();
         _writeChannel = Channel.CreateUnbounded<SubtitleSegment>(new UnboundedChannelOptions { SingleReader = true });
 
@@ -339,6 +341,29 @@ public sealed class TranscriptionPipeline : IAsyncDisposable
             Interlocked.Increment(ref _decodes);
         }
 
+        // Recovery: if plenty of audio has been accepted but the recognizer has never produced a
+        // decode, the session (or the recognizer behind it) is unusable — that is the observed
+        // "captured but the recognizer is not ready" state. Rebuild the session once and log it
+        // loudly so the next report tells us whether this happens at all.
+        int targetRate = _preprocessor.TargetFormat.SampleRate;
+        if (_decodes == 0 && !_sessionRebuilt && targetRate > 0
+            && _cumulativeSamples >= 12L * targetRate)
+        {
+            _sessionRebuilt = true;
+            _log.Warn($"No decode after {_cumulativeSamples / (double)targetRate:0.0}s of audio "
+                      + $"(IsReady={SafeIsReady(session)}); rebuilding the recognition session.");
+            try
+            {
+                _asrSession?.Dispose();
+                _asrSession = _engine.CreateSession();
+                _log.Info("Recognition session rebuilt.");
+            }
+            catch (Exception ex)
+            {
+                _log.Error("Rebuilding the recognition session failed", ex);
+            }
+        }
+
         var result = session.GetResult();
         if (!string.IsNullOrEmpty(result.Text) || result.IsEndpoint)
         {
@@ -348,6 +373,12 @@ public sealed class TranscriptionPipeline : IAsyncDisposable
         {
             session.Reset();
         }
+    }
+
+    private static bool SafeIsReady(IAsrSession session)
+    {
+        try { return session.IsReady(); }
+        catch { return false; }
     }
 
     private void DecodeOffline(float[] chunk, TimeSpan audioTime)

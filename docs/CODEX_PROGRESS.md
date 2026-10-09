@@ -364,3 +364,23 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
   shows "ready"; while transcribing it shows "recognizing".
 - Unit **116** + integration **10** pass.
 - Version bumped to **0.3.7**; MSI + Burn bundle + portable ZIP rebuilt and re-signed.
+
+## Update — bounded self-heal for "captured but the recognizer never decodes" (v0.3.8) (2026-10-09)
+
+- **Reported (second machine):** the v0.3.7 footer chip shows "已采集 N.Ns 音频，识别器未就绪" —
+  i.e. audio reaches the pipeline (`FramesReceived` advancing) but `Decodes == 0`, so nothing is emitted.
+- **Ruled out by measurement (probes, all removed afterwards):**
+  - sample rate fed to the recognizer is 16000 (app log `rate=16000`);
+  - the audio is normal speech (rms 0.02–0.08, max 0.07–0.25);
+  - block size is irrelevant — offline decoding of the same audio at 10/60/1000 ms all produce text
+    (RTF ≈ 0.078);
+  - real-time vs back-to-back feeding is irrelevant — both start decoding after **0.42 s** of audio;
+  - thread count is irrelevant — 4 / 8 / 18 / 36 / default all behave identically.
+  So the recognizer instance itself must be in a state where its stream never becomes ready.
+- **Mitigation:** if 12 s of audio have been accepted with `Decodes == 0`, `DecodeStreaming` rebuilds the
+  recognition session (`_engine.CreateSession()`, old one disposed) once per session and logs a WARN:
+  `No decode after 12.0s of audio (IsReady=False); rebuilding the recognition session.` If the rebuild
+  throws (e.g. the engine was disposed), it logs an ERROR with the stack.
+- **UI:** the chip now reads `已采集 N.Ns 音频，识别器未就绪（正在自动重建会话）`.
+- Unit **116** + integration **10** pass; the healthy path still starts decoding within 0.42 s.
+- Version bumped to **0.3.8**; MSI + Burn bundle + portable ZIP rebuilt and re-signed.

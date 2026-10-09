@@ -1030,7 +1030,7 @@ public sealed class MainViewModel : ObservableObject
         else if (d.Decodes == 0)
         {
             double seconds = d.SamplesAccepted / (double)TargetSampleRate;
-            SetAudioHealth($"已采集 {seconds:0.0}s 音频，识别器未就绪 / {seconds:0.0}s captured, not ready yet", true);
+            SetAudioHealth($"已采集 {seconds:0.0}s 音频，识别器未就绪（正在自动重建会话）/ {seconds:0.0}s captured, recognizer not ready — rebuilding", true);
         }
         else
         {
