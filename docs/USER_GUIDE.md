@@ -69,6 +69,8 @@ dotnet run --project tools/ModelManager -- install --id streaming-zipformer-zh-1
 
 ## 7. 查看与回看完整字幕
 
+- 每行开头显示该句的**开始时间**，格式为 **`[HH:MM]`**（分钟精度，界面不再显示秒）。
+  导出的文件（TXT / Markdown / CSV / SRT）不受影响，仍带完整时间戳。
 - 转写过程中视图默认**自动滚动**到最新一行。
 - 当你用鼠标向上滚动查看历史时，会自动解除“跟随最新”，此时底部会出现
   **“↓ 返回最新字幕 / Return to latest”** 按钮；点击它回到最新一行。

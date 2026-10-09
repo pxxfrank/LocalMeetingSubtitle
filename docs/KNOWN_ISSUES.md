@@ -19,6 +19,7 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 | P1 | `Controls.xaml` used `{StaticResource IconChevronDown}` before `Icons.xaml` was merged → main window failed to load | High (UI) | **FIXED** (`DynamicResource`) |
 | P2 | Dark theme: stock Aero2 ComboBox/TextBox templates paint a hardcoded white background and ignore `Background`/`SystemColors`, making the text invisible | Medium (UI) | **FIXED** (explicit themed templates) |
 | P0 | The built-in lexicon made hotwords always active, and the hotwords file was written to a **Chinese** temp path (`%TEMP%\字幕君\`) that sherpa-onnx cannot read → the recognizer never became ready and **no subtitles appeared at all** | Critical (silent, total failure of the core flow) | **FIXED** — ASCII temp path + an explicit non-ASCII-path guard in the engine |
+| P1 | Release packaging: the repository `models/` folder was **flattened** into the publish (the ASR model files landed directly under `models\` instead of `models\<model>\`), so the shipped app reported `installed=False` and **Start was disabled** | High (release-breaking) | **FIXED** — pre-create `models\` and copy each model **directory** to its own sub-path; procedure documented |
 | P3-1 | Subtitle selection is row-level, not character-level | Low | Open |
 | P3-2 | `AppSettings.EnableVadSegmenting` persisted but not wired | Low | Open |
 | P3-3 | `AsrNumThreads` applies at next Start / engine swap, not live | Low | Open |
@@ -114,6 +115,32 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 - **Verification:** the published 0.4.0 build, started through the UI, captured loopback audio and
   **persisted 3 real Chinese subtitle segments** (see BLOCKED-1).
 - **Regression guards:** `ModelHotwordFileTempPathTests` (unit) and `NonAsciiPathGuardTests` (integration).
+
+#### P0 — Release packaging flattened the bundled `models/` tree *(FIXED)*
+
+- **Symptom:** after a clean republish, the shipped app reported
+  `Startup check complete: … model=streaming-zipformer-zh-14M installed=False` and the **Start button
+  was disabled** — the app could not transcribe at all.
+- **Root cause:** the release procedure copied the models with
+  `Copy-Item -Recurse -Force models\<dir> <publish>\models` **without pre-creating** `<publish>\models`.
+  With a non-existent destination, PowerShell creates it as a copy of the *first* source directory, so
+  the 14M model's files landed directly in `models\` instead of `models\<model-dir>\`. The app looks for
+  `models\<model-dir>\encoder-….int8.onnx`, did not find it, and correctly disabled Start.
+- **Fix (procedure):** create the directory first and copy each model **to its own sub-path**:
+  ```powershell
+  $dest = "dist/SubtitleJun-win-x64/models"
+  Remove-Item -Recurse -Force $dest -ErrorAction SilentlyContinue
+  New-Item -ItemType Directory -Force -Path $dest | Out-Null
+  foreach ($m in @("sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23",
+                   "sherpa-onnx-pyannote-segmentation-3-0",
+                   "3dspeaker-eres2net-base-zh-16k")) {
+      Copy-Item -Recurse -Force -Path "models/$m" -Destination (Join-Path $dest $m)
+  }
+  ```
+- **Verification:** after the fix the published build reports `installed=True`, Start is enabled, and a
+  UI-driven run persisted real subtitles (see BLOCKED-1).
+- **Lesson:** always launch the *packaged* app once before shipping — a compile + unit test cannot catch
+  a broken model layout.
 
 ## Open limitations (P3 — minor)
 

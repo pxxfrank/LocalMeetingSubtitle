@@ -620,3 +620,24 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
 
 ### 测试
 - 单元 **155 → 157**；集成 **12 → 14**；性能 3 + 1 跳过；构建 0 错误。
+
+### 打包缺陷（同步修复）
+- 清理重发布后发现随包 `models/` 被**拍平**（ASR 模型文件直接落在 `models\` 下，而非 `models\<模型目录>\`），
+  导致发布版启动日志报 `installed=False`、**「开始」按钮置灰、完全无法转写**。
+  根因：`Copy-Item -Recurse` 目标目录未预先创建时，会把第一个源目录**当作目标目录本身**复制。
+- 修正流程（先建目录，再逐个复制到各自子路径）：见 `KNOWN_ISSUES.md`「Release packaging flattened the
+  bundled models tree（FIXED）」。
+- 修正后复跑**最终发布产物**：`installed=True`、Start 可用、UI 驱动一次运行**落库 2 条真实中文字幕**
+  （会话 `97e832ca…`）。
+- **教训：发布前一定要真正启动一次打包后的程序**——编译 + 单元测试无法发现模型目录结构错误。
+
+## Update — 界面时间戳统一为分钟精度 (2026-10-09)
+
+- 应要求，**显示**位置的句子时间戳由 `[HH:MM:SS]` 改为 **`[HH:MM]`**：
+  - 主窗口字幕列表（`SubtitleLineViewModel.Timestamp`）；
+  - 悬浮字幕窗口（同一绑定）；
+  - 发言人管理窗口的字幕列表（`SegmentRowViewModel.TimeText`）——同一句字幕在两个窗口应显示一致，故一并统一；
+    如只需要前两处，回退这一处即可。
+- **导出格式保持不变**：TXT / Markdown / CSV 仍为 `HH:MM:SS`，SRT 仍为 `HH:MM:SS,mmm`（格式规范要求）。
+- 无测试断言显示格式（既有 `[00:00:00]` 断言都在**导出**测试中，未受影响）；构建 0 错误，
+  单元 157 / 集成 14 / 性能 3（+1 跳过）全通过。

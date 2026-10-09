@@ -27,8 +27,8 @@ public sealed class SegmentRowViewModel : ObservableObject
     /// <summary>The text shown for this segment (respects the user's edits).</summary>
     public string DisplayText => Segment.DisplayText;
 
-    /// <summary>Start offset formatted as [HH:MM:SS].</summary>
-    public string TimeText => $"[{Segment.StartOffset.Hours + Segment.StartOffset.Days * 24:00}:{Segment.StartOffset.Minutes:00}:{Segment.StartOffset.Seconds:00}]";
+    /// <summary>Start offset formatted as [HH:MM] (same display precision as the subtitle board).</summary>
+    public string TimeText => $"[{Segment.StartOffset.Hours + Segment.StartOffset.Days * 24:00}:{Segment.StartOffset.Minutes:00}]";
 
     /// <summary>Pickable speakers: every non-merged speaker plus the "未知 / Unknown" option.</summary>
     public ObservableCollection<SpeakerChoice> SpeakerChoices { get; }

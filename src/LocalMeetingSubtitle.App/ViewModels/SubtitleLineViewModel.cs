@@ -124,8 +124,8 @@ public sealed class SubtitleLineViewModel : ObservableObject
         SpeakerBrush = brush;
     }
 
-    /// <summary>[HH:MM:SS] — hours are not clamped to 24.</summary>
-    public string Timestamp => $"[{StartOffset.Hours + StartOffset.Days * 24:00}:{StartOffset.Minutes:00}:{StartOffset.Seconds:00}]";
+    /// <summary>[HH:MM] — hours are not clamped to 24. Second-level precision is deliberately omitted.</summary>
+    public string Timestamp => $"[{StartOffset.Hours + StartOffset.Days * 24:00}:{StartOffset.Minutes:00}]";
 
     public string Display => $"{Timestamp} {_text}";
 
