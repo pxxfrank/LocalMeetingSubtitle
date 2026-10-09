@@ -31,6 +31,21 @@ from Hugging Face. All models in the catalog are licensed **Apache-2.0**:
 
 Licenses were verified against the Hugging Face API; see [`MODEL_SELECTION.md`](MODEL_SELECTION.md).
 
+### Diarization models (V0.4.0)
+
+Offline speaker diarization uses two further models. They are **not** bundled with the source and are
+downloaded on demand by `ModelManager`; **neither is an ASR model**. They are declared separately in
+`src/LocalMeetingSubtitle.Asr/DiarizationModelCatalog.cs`:
+
+| Model | File | Size | License | Source URL |
+| --- | --- | --- | --- | --- |
+| `pyannote-segmentation-3-0` (speaker segmentation) | `model.onnx` | 5 992 913 bytes (~5.72 MB) | MIT (pyannote / CNRS) | `https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.onnx` |
+| `3dspeaker-eres2net-base-zh-16k` (speaker embedding) | `3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx` | 39 593 761 bytes (~37.76 MB) | Apache-2.0 (3D-Speaker / ModelScope) | `https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx` |
+
+The embedding model's SHA-256 is pinned as
+`1a331345f04805badbb495c775a6ddffcdd1a732567d5ec8b3d5749e3c7a5e4b` (verified against the
+download). See [`MODEL_SELECTION.md`](MODEL_SELECTION.md) for the verification log.
+
 ## Project license
 
 字幕君 itself is released under the **MIT License** (see the root `LICENSE` file).

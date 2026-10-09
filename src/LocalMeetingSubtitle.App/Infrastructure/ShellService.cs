@@ -114,6 +114,26 @@ public sealed class ShellService : IShellService
 
     public void RequestExit() => _requestExit();
 
+    public string? PickAudioFile()
+    {
+        string? result = null;
+        UiDispatcher.Invoke(() =>
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "选择会议录音 / Choose a meeting recording",
+                Filter = "音频 / Audio (*.wav;*.mp3;*.flac;*.m4a;*.aac;*.wma)|*.wav;*.mp3;*.flac;*.m4a;*.aac;*.wma|所有文件 / All files (*.*)|*.*",
+                CheckFileExists = true,
+                Multiselect = false
+            };
+            if (dialog.ShowDialog() == true)
+            {
+                result = dialog.FileName;
+            }
+        });
+        return result;
+    }
+
     public void Notify(string title, string message)
     {
         try

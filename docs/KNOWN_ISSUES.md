@@ -23,6 +23,11 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 | P3-3 | `AsrNumThreads` applies at next Start / engine swap, not live | Low | Open |
 | P3-4 | Hotword editing UI is a one-line-per-hotword text box | Low | Open |
 | P3-5 | Floating-window resize not interactively verified | Low | Open |
+| P3-6 | No speaker-management UI yet (rename / merge / reassign) | Low | Open → V0.4.2 |
+| P3-7 | Manual speaker count only via settings; no dedicated control | Low | Open |
+| P3-8 | Post-meeting recording capture not wired (import only) | Low | Open |
+| P3-9 | Diarization models are downloaded, not bundled in the publish | Low | Open |
+| P3-10 | Real-time + diarization concurrency not measured on target hardware | Low | Open |
 | BLOCKED-1 | Full Start→transcribe→persist UI path not exercised | P0 (target) | Blocked (no real audio; model not installed in app data dir) |
 | BLOCKED-2 | No real-meeting 3-hour stability run | P0 (target) | Blocked (`ThreeHourSoak` never executed) |
 | BLOCKED-3 | Installer signature is self-signed / untrusted | P1 (release) | Partial (MSI + Setup.exe produced & signed; no CA-issued certificate) |
@@ -120,6 +125,59 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 - **Impact:** the floating subtitle window's always-on-top, click-through and restore behaviour are
   implemented and code-verified, but interactive resize was not manually verified on-screen.
 - **Workaround:** adjust font size / opacity from Settings.
+
+### V0.4.0 — open limitations (P3)
+
+V0.4.0 adds offline speaker diarization (import a recording → anonymous speaker labels A/B/…). The
+following limitations are known and accepted for this version.
+
+#### P3-6 — No speaker-management UI yet (rename / merge / reassign)
+
+- **Impact:** a session can be diarized and each subtitle tagged with an anonymous speaker
+  (`A`/`B`/…), but there is **no UI** to rename a speaker, merge two speakers, or reassign an
+  individual segment's speaker. The data model is already prepared — `Speaker.DisplayName`,
+  `Speaker.IsMerged`, `SpeakerAssignment.Source` and `ISpeakerRepository.MergeSpeakersAsync` /
+  `SetAssignmentSpeakerAsync` exist — so only the UI is missing.
+- **Workaround:** none; the anonymous labels are still usable to read who spoke when.
+- **Planned:** V0.4.2 (rename / merge / reassign / by-speaker filter + export). V0.4.3
+  (dual-stream / near-real-time) is likewise not started.
+
+#### P3-7 — Manual speaker count only via settings; no dedicated control
+
+- **Impact:** the expected speaker count is taken from `AppSettings.DiarizationSpeakerCount`
+  (0 = automatic) together with `AppSettings.DiarizationClusteringThreshold` (default 0.5). There is
+  no per-run control in the diarization flow itself ("analyze with exactly N speakers").
+- **Workaround:** set the values in Settings before running diarization; the default (0, auto) needs
+  no change.
+
+#### P3-8 — Post-meeting recording capture not wired (import only)
+
+- **Impact:** diarization works only on an **imported** audio file
+  (`IShellService.PickAudioFile()` → `NaudioAudioFileLoader`). The post-meeting *recording capture*
+  side — capturing the meeting to a file so it can be analysed without a separate recording — is
+  **not** wired. The `AudioAssetKind.TempRecording` / `RetainedRecording` values exist but are not
+  produced by any capture path yet.
+- **Workaround:** record the meeting with any recorder, then import the file and diarize it.
+
+#### P3-9 — Diarization models are downloaded, not bundled in the publish
+
+- **Impact:** the release publish/installer has **not** been rebuilt for 0.4.0, and the two
+  diarization models (`pyannote-segmentation-3-0`, `3dspeaker-eres2net-base-zh-16k`) are **not yet
+  bundled** into the publish. They must be fetched on demand.
+- **Workaround:** install them with `ModelManager` before diarizing (see
+  [`DEVELOPMENT.md`](DEVELOPMENT.md)):
+  `dotnet run --project tools/ModelManager -- install --id pyannote-segmentation-3-0` and
+  `--id 3dspeaker-eres2net-base-zh-16k` (add `--models-root "$env:LOCALAPPDATA\SubtitleJun\models"`
+  for the app).
+
+#### P3-10 — Real-time + diarization concurrency not measured on target hardware
+
+- **Impact:** by design diarization runs on a dedicated **below-normal-priority** thread and is
+  CPU-thread-capped (`SherpaOfflineSpeakerDiarizer`, default `min(ProcessorCount/4, 4)`), so it
+  cannot starve the recognizer. However the **combined** load of live transcription **and** a
+  concurrent diarization run was **not measured** on the target hardware.
+- **Workaround:** run diarization *after* the meeting (the intended flow) rather than during live
+  transcription.
 
 ## Blocked / NOT_TESTED items
 

@@ -1,5 +1,6 @@
 using LocalMeetingSubtitle.App.Infrastructure;
 using LocalMeetingSubtitle.Core.Models;
+using System.Windows.Media;
 
 namespace LocalMeetingSubtitle.App.ViewModels;
 
@@ -9,6 +10,9 @@ public sealed class SubtitleLineViewModel : ObservableObject
     private string _text;
     private bool _isFinal;
     private bool _isMatch;
+    private string? _speakerLabel;
+    private bool _needsSpeakerConfirmation;
+    private SolidColorBrush? _speakerBrush;
 
     public SubtitleLineViewModel(int sequenceNumber, TimeSpan startOffset, string text, bool isFinal)
     {
@@ -56,6 +60,57 @@ public sealed class SubtitleLineViewModel : ObservableObject
     {
         get => _isMatch;
         set => SetProperty(ref _isMatch, value);
+    }
+
+    /// <summary>The speaker's name for this row; null when unknown or not yet analyzed.</summary>
+    public string? SpeakerLabel
+    {
+        get => _speakerLabel;
+        private set
+        {
+            if (SetProperty(ref _speakerLabel, value))
+            {
+                OnPropertyChanged(nameof(HasSpeaker));
+            }
+        }
+    }
+
+    public bool HasSpeaker => !string.IsNullOrEmpty(_speakerLabel);
+
+    /// <summary>True when the automatic assignment was ambiguous and a human should confirm it.</summary>
+    public bool NeedsSpeakerConfirmation
+    {
+        get => _needsSpeakerConfirmation;
+        private set => SetProperty(ref _needsSpeakerConfirmation, value);
+    }
+
+    /// <summary>Stable color for the speaker tag (frozen for cheap reuse).</summary>
+    public SolidColorBrush? SpeakerBrush
+    {
+        get => _speakerBrush;
+        private set => SetProperty(ref _speakerBrush, value);
+    }
+
+    /// <summary>Applies (or clears) the speaker tag for this row.</summary>
+    public void SetSpeaker(string? speakerName, int colorArgb, bool needsConfirmation)
+    {
+        SpeakerLabel = speakerName;
+        NeedsSpeakerConfirmation = needsConfirmation;
+
+        if (string.IsNullOrEmpty(speakerName))
+        {
+            SpeakerBrush = null;
+            return;
+        }
+
+        var color = System.Windows.Media.Color.FromArgb(
+            (byte)((colorArgb >> 24) & 0xFF),
+            (byte)((colorArgb >> 16) & 0xFF),
+            (byte)((colorArgb >> 8) & 0xFF),
+            (byte)(colorArgb & 0xFF));
+        var brush = new SolidColorBrush(color);
+        brush.Freeze();
+        SpeakerBrush = brush;
     }
 
     /// <summary>[HH:MM:SS] — hours are not clamped to 24.</summary>

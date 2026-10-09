@@ -32,6 +32,10 @@ internal sealed class TempDatabase : IAsyncDisposable
 
     public SqliteSettingsRepository CreateSettingsRepository() => new(Database);
 
+    public SqliteSpeakerRepository CreateSpeakerRepository() => new(Database);
+
+    public SqliteAudioAssetRepository CreateAudioAssetRepository() => new(Database);
+
     public async ValueTask DisposeAsync()
     {
         await Database.DisposeAsync();

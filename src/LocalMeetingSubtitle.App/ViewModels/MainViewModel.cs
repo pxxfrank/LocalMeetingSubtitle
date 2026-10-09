@@ -39,8 +39,12 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private WasapiLoopbackCaptureService CaptureService => _captureService ??= _captureFactory();
     private readonly Func<IAsrEngine> _engineFactory;
+    private readonly ISpeakerRepository _speakerRepository;
+    private readonly ISpeakerDiarizationService _diarization;
 
     private readonly List<SubtitleSegment> _segments = new();
+    private readonly Dictionary<long, SpeakerAssignment> _assignments = new();
+    private readonly Dictionary<string, Speaker> _speakersById = new();
 
     private AppSettings _settings = new();
     private MeetingSession? _session;
@@ -70,7 +74,9 @@ public sealed class MainViewModel : ObservableObject
         ISubtitleExportService exportService,
         IPerformanceMonitor performanceMonitor,
         Func<WasapiLoopbackCaptureService> captureFactory,
-        Func<IAsrEngine> engineFactory)
+        Func<IAsrEngine> engineFactory,
+        ISpeakerRepository speakerRepository,
+        ISpeakerDiarizationService diarization)
     {
         Shell = shell;
         _log = log;
@@ -82,6 +88,8 @@ public sealed class MainViewModel : ObservableObject
         _performanceMonitor = performanceMonitor;
         _captureFactory = captureFactory;
         _engineFactory = engineFactory;
+        _speakerRepository = speakerRepository;
+        _diarization = diarization;
         _dispatcher = Dispatcher.CurrentDispatcher;
 
         StartCommand = new AsyncRelayCommand(StartAsync, () => CanStart);
@@ -90,6 +98,7 @@ public sealed class MainViewModel : ObservableObject
         StopCommand = new AsyncRelayCommand(StopAsync, () => State is TranscriptionState.Transcribing or TranscriptionState.Paused);
         ExportCommand = new AsyncRelayCommand(ExportAsync, () => _segments.Count > 0);
         ApplyHotwordsCommand = new AsyncRelayCommand(ReapplyHotwordsAsync, () => _descriptor is not null && _modelInstalled);
+        ImportAndDiarizeCommand = new AsyncRelayCommand(ImportAndDiarizeAsync, () => _session is not null && !IsDiarizing);
         ToggleSearchCommand = new RelayCommand(() => IsSearchVisible = !IsSearchVisible);
         OpenSettingsCommand = new RelayCommand(() => Shell.ShowSettings());
         ToggleFloatingCommand = new RelayCommand(() => Shell.ToggleFloating());
@@ -115,6 +124,7 @@ public sealed class MainViewModel : ObservableObject
     public AsyncRelayCommand StopCommand { get; }
     public AsyncRelayCommand ExportCommand { get; }
     public AsyncRelayCommand ApplyHotwordsCommand { get; }
+    public AsyncRelayCommand ImportAndDiarizeCommand { get; }
     public RelayCommand ToggleSearchCommand { get; }
     public RelayCommand OpenSettingsCommand { get; }
     public RelayCommand ToggleFloatingCommand { get; }
@@ -376,6 +386,165 @@ public sealed class MainViewModel : ObservableObject
 
     /// <summary>Segments of the current session (for export/search).</summary>
     public IReadOnlyList<SubtitleSegment> Segments => _segments;
+
+    // =====================================================================
+    // Speaker diarization (post-meeting, offline)
+    // =====================================================================
+
+    private bool _isDiarizing;
+    private double _diarizationProgress;
+    private string _diarizationStatusText = "";
+    private bool _hasSpeakers;
+
+    /// <summary>True while a post-meeting diarization run is in flight.</summary>
+    public bool IsDiarizing
+    {
+        get => _isDiarizing;
+        private set
+        {
+            if (SetProperty(ref _isDiarizing, value))
+            {
+                RelayCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public double DiarizationProgress
+    {
+        get => _diarizationProgress;
+        private set => SetProperty(ref _diarizationProgress, value);
+    }
+
+    public string DiarizationStatusText
+    {
+        get => _diarizationStatusText;
+        private set
+        {
+            if (SetProperty(ref _diarizationStatusText, value))
+            {
+                OnPropertyChanged(nameof(HasDiarizationStatus));
+            }
+        }
+    }
+
+    public bool HasDiarizationStatus => !string.IsNullOrEmpty(_diarizationStatusText);
+
+    /// <summary>True once at least one subtitle in the session has a speaker.</summary>
+    public bool HasSpeakers
+    {
+        get => _hasSpeakers;
+        private set => SetProperty(ref _hasSpeakers, value);
+    }
+
+    /// <summary>Imports a local recording and runs offline speaker diarization over the current session.</summary>
+    public async Task ImportAndDiarizeAsync()
+    {
+        if (_session is null)
+        {
+            RaiseWarning("请先开始并结束一次会议，再导入录音 / start and stop a meeting first.");
+            return;
+        }
+
+        var path = Shell.PickAudioFile();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        IsDiarizing = true;
+        DiarizationProgress = 0;
+        DiarizationStatusText = "正在分析录音… / diarizing…";
+
+        try
+        {
+            var speakerCount = Math.Max(0, _settings.DiarizationSpeakerCount);
+            var request = new DiarizationRequest(
+                _session.SessionId,
+                path,
+                speakerCount > 0 ? SpeakerCountMode.Manual : SpeakerCountMode.Auto,
+                speakerCount,
+                _settings.DiarizationClusteringThreshold);
+
+            var progress = new Progress<DiarizationProgress>(p =>
+            {
+                DiarizationProgress = p.Fraction;
+                DiarizationStatusText = p.TotalChunks > 0
+                    ? $"正在分析 {p.ProcessedChunks}/{p.TotalChunks}… / diarizing {p.Fraction:P0}"
+                    : "正在分析… / diarizing…";
+            });
+
+            var result = await _diarization.RunAsync(request, progress).ConfigureAwait(true);
+
+            if (result.Success)
+            {
+                await ReloadSpeakersAsync().ConfigureAwait(true);
+                DiarizationStatusText = $"完成：{result.SpeakerCount} 位发言人，{result.AssignedSegments} 条字幕已归属 / done";
+                RaiseWarning($"说话人分离完成 / diarization done：{result.SpeakerCount} speakers, {result.AssignedSegments} segments, {result.NeedsConfirmation} need confirmation.");
+            }
+            else
+            {
+                DiarizationStatusText = "分析失败 / failed：" + (result.Error ?? "unknown");
+                RaiseWarning("说话人分离失败 / diarization failed：" + (result.Error ?? "unknown"));
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Error("Diarization failed", ex);
+            DiarizationStatusText = "分析失败 / failed：" + ex.Message;
+            RaiseWarning("说话人分离失败 / diarization failed：" + ex.Message);
+        }
+        finally
+        {
+            IsDiarizing = false;
+        }
+    }
+
+    /// <summary>Loads speakers + assignments for the current session and applies the tags to the view.</summary>
+    private async Task ReloadSpeakersAsync()
+    {
+        if (_session is null)
+        {
+            return;
+        }
+
+        var speakers = await _speakerRepository.GetSpeakersAsync(_session.SessionId).ConfigureAwait(true);
+        var assignments = await _speakerRepository.GetAssignmentsAsync(_session.SessionId).ConfigureAwait(true);
+
+        _speakersById.Clear();
+        foreach (var speaker in speakers)
+        {
+            _speakersById[speaker.SpeakerId] = speaker;
+        }
+
+        _assignments.Clear();
+        foreach (var assignment in assignments)
+        {
+            _assignments[assignment.SegmentId] = assignment;
+        }
+
+        foreach (var line in Lines)
+        {
+            ApplySpeakerToLine(line);
+        }
+
+        HasSpeakers = _assignments.Values.Any(a => a.SpeakerId is not null);
+        SubtitleChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void ApplySpeakerToLine(SubtitleLineViewModel line)
+    {
+        if (line.Segment is null
+            || !_assignments.TryGetValue(line.Segment.SegmentId, out var assignment)
+            || assignment.SpeakerId is null
+            || !_speakersById.TryGetValue(assignment.SpeakerId, out var speaker))
+        {
+            line.SetSpeaker(null, 0, false);
+            return;
+        }
+
+        var name = string.IsNullOrWhiteSpace(speaker.DisplayName) ? "发言人 " + speaker.Label : speaker.DisplayName;
+        line.SetSpeaker(name, speaker.ColorArgb, assignment.NeedsConfirmation);
+    }
 
     // =====================================================================
     // Initialization
@@ -824,6 +993,7 @@ public sealed class MainViewModel : ObservableObject
                 line.Segment = segment;
                 _segments.Add(segment);
                 ApplySearchTo(line);
+                ApplySpeakerToLine(line);
                 RelayCommand.RaiseCanExecuteChanged();
                 break;
 
@@ -855,6 +1025,9 @@ public sealed class MainViewModel : ObservableObject
         Lines.Clear();
         FloatingLines.Clear();
         _segments.Clear();
+        _assignments.Clear();
+        _speakersById.Clear();
+        HasSpeakers = false;
         MatchCount = 0;
         OnPropertyChanged(nameof(HasLines));
         SubtitleChanged?.Invoke(this, EventArgs.Empty);

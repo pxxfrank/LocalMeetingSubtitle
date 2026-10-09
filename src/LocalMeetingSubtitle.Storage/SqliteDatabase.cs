@@ -101,6 +101,85 @@ public sealed class SqliteDatabase : IAsyncDisposable
                 Value TEXT NOT NULL
             );
             """
+        }),
+        new(4, "speaker diarization schema", new[]
+        {
+            """
+            CREATE TABLE IF NOT EXISTS diarization_runs (
+                RunId                 TEXT    NOT NULL PRIMARY KEY,
+                SessionId             TEXT    NOT NULL,
+                AudioAssetId          TEXT    NULL,
+                CreatedAt             TEXT    NOT NULL,
+                Status                INTEGER NOT NULL,
+                RequestedSpeakerCount INTEGER NOT NULL DEFAULT 0,
+                ResolvedSpeakerCount  INTEGER NOT NULL DEFAULT 0,
+                ClusteringThreshold   REAL    NOT NULL DEFAULT 0.5,
+                MinDurationOn         REAL    NOT NULL DEFAULT 0.3,
+                MinDurationOff        REAL    NOT NULL DEFAULT 0.5,
+                SegmentationModelId   TEXT    NOT NULL DEFAULT '',
+                EmbeddingModelId      TEXT    NOT NULL DEFAULT '',
+                DurationMs            INTEGER NOT NULL DEFAULT 0,
+                ErrorMessage          TEXT    NULL
+            );
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_diaruns_session ON diarization_runs (SessionId, CreatedAt);",
+            """
+            CREATE TABLE IF NOT EXISTS speakers (
+                SpeakerId           TEXT    NOT NULL PRIMARY KEY,
+                SessionId           TEXT    NOT NULL,
+                Label               TEXT    NOT NULL DEFAULT '',
+                DisplayName         TEXT    NOT NULL DEFAULT '',
+                ColorArgb           INTEGER NOT NULL DEFAULT 0,
+                SortOrder           INTEGER NOT NULL DEFAULT 0,
+                CreatedAt           TEXT    NOT NULL,
+                IsMerged            INTEGER NOT NULL DEFAULT 0,
+                MergedIntoSpeakerId TEXT    NULL
+            );
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_speakers_session ON speakers (SessionId, SortOrder);",
+            """
+            CREATE TABLE IF NOT EXISTS speaker_intervals (
+                SpeakerSegmentId INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                RunId            TEXT    NOT NULL,
+                SessionId        TEXT    NOT NULL,
+                StartMs          INTEGER NOT NULL,
+                EndMs            INTEGER NOT NULL,
+                RawSpeakerIndex  INTEGER NOT NULL,
+                Confidence       REAL    NULL
+            );
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_speaker_intervals_run ON speaker_intervals (RunId, StartMs);",
+            """
+            CREATE TABLE IF NOT EXISTS speaker_assignments (
+                AssignmentId      INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                SessionId         TEXT    NOT NULL,
+                SegmentId         INTEGER NOT NULL,
+                RunId             TEXT    NULL,
+                SpeakerId         TEXT    NULL,
+                Source            INTEGER NOT NULL DEFAULT 0,
+                Confidence        REAL    NULL,
+                NeedsConfirmation INTEGER NOT NULL DEFAULT 0,
+                UpdatedAt         TEXT    NOT NULL,
+                UNIQUE (SegmentId)
+            );
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_speaker_assignments_session ON speaker_assignments (SessionId);",
+            """
+            CREATE TABLE IF NOT EXISTS audio_assets (
+                AudioAssetId   TEXT    NOT NULL PRIMARY KEY,
+                SessionId      TEXT    NULL,
+                Path           TEXT    NOT NULL,
+                Kind           INTEGER NOT NULL DEFAULT 0,
+                SampleRate     INTEGER NOT NULL DEFAULT 0,
+                Channels       INTEGER NOT NULL DEFAULT 0,
+                DurationMs     INTEGER NOT NULL DEFAULT 0,
+                SizeBytes      INTEGER NOT NULL DEFAULT 0,
+                CreatedAt      TEXT    NOT NULL,
+                DeleteAfterUtc TEXT    NULL,
+                IsTemporary    INTEGER NOT NULL DEFAULT 0
+            );
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_audio_assets_expiry ON audio_assets (IsTemporary, DeleteAfterUtc);"
         })
     };
 

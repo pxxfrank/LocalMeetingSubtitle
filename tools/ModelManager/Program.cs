@@ -1,23 +1,40 @@
 using LocalMeetingSubtitle.Asr;
+using LocalMeetingSubtitle.Core.Models;
 using LocalMeetingSubtitle.ModelDownloads;
 
 // ModelManager: list / install / verify sherpa-onnx models. Development & install-time only.
 //
-//   ModelManager list    [--models-root <path>]
-//   ModelManager install --id <id> [--models-root <path>]
-//   ModelManager verify  [--id <id>] [--models-root <path>]
+//   ModelManager list    [--catalog asr|diarization|all] [--models-root <path>]
+//   ModelManager install --id <id> [--catalog asr|diarization|all] [--models-root <path>]
+//   ModelManager verify  [--id <id>] [--catalog asr|diarization|all] [--models-root <path>]
 
 var opts = CliArgs.Parse(args);
 string command = opts.GetValueOrDefault("_cmd") ?? "list";
 string modelsRoot = opts.GetValueOrDefault("models-root") ?? FindModelsRoot();
+string catalogName = (opts.GetValueOrDefault("catalog") ?? "all").ToLowerInvariant();
 
 if (opts.ContainsKey("help"))
 {
-    Console.WriteLine("Commands: list | install --id <id> | verify --id <id>   [--models-root <path>]");
+    Console.WriteLine("Commands: list | install --id <id> | verify --id <id>   [--catalog asr|diarization|all] [--models-root <path>]");
     return 0;
 }
 
-var manager = new HttpModelManager(modelsRoot);
+IReadOnlyList<ModelDescriptor>? catalog = catalogName switch
+{
+    "asr" => AsrModelCatalog.All,
+    "diarization" => DiarizationModelCatalog.All,
+    // The default combines both so every model the app may need is visible to one tool.
+    "all" => AsrModelCatalog.All.Concat(DiarizationModelCatalog.All).ToList(),
+    _ => null
+};
+
+if (catalog is null)
+{
+    Console.Error.WriteLine($"Unknown catalog '{catalogName}'. Use asr | diarization | all.");
+    return 2;
+}
+
+var manager = new HttpModelManager(modelsRoot, catalog);
 Console.WriteLine($"models-root = {manager.ModelsRoot}");
 Console.WriteLine();
 

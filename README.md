@@ -15,6 +15,7 @@
 - 通过 **WASAPI loopback** 捕获系统播放（扬声器/耳机）声音，无需麦克风、无需虚拟声卡。
 - 使用 **sherpa-onnx**（流式 zipformer / 离线 SenseVoice）在本地进行语音识别，输出中文实时字幕。
 - 字幕**只保存在本机**（`%LOCALAPPDATA%\SubtitleJun\`），提供置顶悬浮字幕、搜索、热词、文本纠正与 TXT/SRT/Markdown 导出。
+- 支持**离线说话人分离**：会后导入一段录音（「说话人 / Speakers」按钮）即可分析并标注**匿名发言人 A / B / …**（声纹聚类出的编号，**非身份识别**；默认无需联网下载以外的配置）。
 - 运行期**不发起任何网络请求**：唯一引用 `System.Net.Http` 的 `ModelDownloads` 程序集与识别链路隔离，可静态验证（见“离线保证”）。
 
 技术栈：.NET 8 / WPF（`net8.0-windows`，x64，**Claude 风格极简界面**：自绘主题 + 线性图标，支持**明/暗主题实时切换**，不依赖任何第三方 UI 框架）、NAudio 2.2.1、sherpa-onnx 1.13.8、Microsoft.Data.Sqlite 8.0.31（WAL）。

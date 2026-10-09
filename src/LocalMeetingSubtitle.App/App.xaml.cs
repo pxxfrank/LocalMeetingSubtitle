@@ -8,6 +8,8 @@ using LocalMeetingSubtitle.ModelDownloads;
 using LocalMeetingSubtitle.Audio;
 using LocalMeetingSubtitle.Core.Abstractions;
 using LocalMeetingSubtitle.Core.Hotwords;
+using LocalMeetingSubtitle.Core.Models;
+using LocalMeetingSubtitle.Core.Speakers;
 using LocalMeetingSubtitle.Diagnostics;
 using LocalMeetingSubtitle.Export;
 using LocalMeetingSubtitle.Storage;
@@ -100,7 +102,9 @@ public partial class App : Application
             _services.GetRequiredService<ISubtitleExportService>(),
             _services.GetRequiredService<IPerformanceMonitor>(),
             () => _services.GetRequiredService<WasapiLoopbackCaptureService>(),
-            () => _services.GetRequiredService<Func<IAsrEngine>>()());
+            () => _services.GetRequiredService<Func<IAsrEngine>>()(),
+            _services.GetRequiredService<ISpeakerRepository>(),
+            _services.GetRequiredService<ISpeakerDiarizationService>());
         _shell.Attach(_mainViewModel);
 
         _logger.Info("View-model created; creating tray icon.");
@@ -215,6 +219,40 @@ public partial class App : Application
 
         // Lazy factory: each call constructs a fresh recognition engine.
         services.AddSingleton<Func<IAsrEngine>>(sp => () => new SherpaOnnxAsrEngine(sp.GetRequiredService<IAppLogger>()));
+
+        // ---- Offline speaker diarization (post-meeting) -------------------
+        services.AddSingleton<ISpeakerRepository>(sp => new SqliteSpeakerRepository(sp.GetRequiredService<SqliteDatabase>()));
+        services.AddSingleton<IAudioAssetRepository>(sp => new SqliteAudioAssetRepository(sp.GetRequiredService<SqliteDatabase>()));
+        services.AddSingleton<IAudioFileLoader>(_ => new NaudioAudioFileLoader());
+        services.AddSingleton<ISpeakerAlignmentService>(_ => new SpeakerAlignmentService());
+
+        // A second, keyed model manager so diarization descriptors never enter the ASR catalog.
+        services.AddKeyedSingleton<IModelManager>("diarization",
+            (_, _) => new HttpModelManager(ResolveModelsRoot(logger), DiarizationModelCatalog.All));
+
+        services.AddSingleton(sp =>
+        {
+            var keyed = sp.GetRequiredKeyedService<IModelManager>("diarization");
+            var segmentation = DiarizationModelCatalog.Segmentation;
+            var embedding = DiarizationModelCatalog.Embedding;
+            return new DiarizationEngineOptions
+            {
+                SegmentationModelPath = Path.Combine(keyed.GetModelDirectory(segmentation), segmentation.Files[0].RelativePath),
+                EmbeddingModelPath = Path.Combine(keyed.GetModelDirectory(embedding), embedding.Files[0].RelativePath),
+                Provider = "cpu",
+                ComputeConfidence = true
+            };
+        });
+
+        services.AddSingleton<ISpeakerDiarizationService>(sp => new SpeakerDiarizationService(
+            () => new SherpaOfflineSpeakerDiarizer(sp.GetRequiredService<IAppLogger>()),
+            sp.GetRequiredService<IAudioFileLoader>(),
+            sp.GetRequiredService<ISpeakerAlignmentService>(),
+            sp.GetRequiredService<ISpeakerRepository>(),
+            sp.GetRequiredService<ISubtitleRepository>(),
+            sp.GetRequiredService<DiarizationEngineOptions>(),
+            sp.GetRequiredService<IAudioAssetRepository>(),
+            sp.GetRequiredService<IAppLogger>()));
 
         return services.BuildServiceProvider();
     }

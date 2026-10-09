@@ -29,6 +29,10 @@ dotnet test tests/LocalMeetingSubtitle.UnitTests/LocalMeetingSubtitle.UnitTests.
 dotnet test tests/LocalMeetingSubtitle.IntegrationTests/LocalMeetingSubtitle.IntegrationTests.csproj -c Debug
 dotnet test tests/LocalMeetingSubtitle.PerformanceTests/LocalMeetingSubtitle.PerformanceTests.csproj -c Debug --filter "Category=Performance"
 
+# Real-model speaker-diarization validation (integration tests; they SKIP automatically when the two
+# diarization models + the two-speaker eval wavs are not present under models/)
+dotnet test tests/LocalMeetingSubtitle.IntegrationTests/LocalMeetingSubtitle.IntegrationTests.csproj -c Debug --filter "FullyQualifiedName~SpeakerDiarizationRealModelTests"
+
 # Run the app (development)
 dotnet run --project src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c Debug
 
@@ -82,6 +86,33 @@ dotnet run --project tools/ModelManager -- install --id streaming-zipformer-zh-1
 
 # Verify presence (and list any missing files)
 dotnet run --project tools/ModelManager -- verify --models-root "$env:LOCALAPPDATA\SubtitleJun\models"
+```
+
+### Diarization models (V0.4.0)
+
+Offline speaker diarization needs **two additional models** — a pyannote segmentation model and a
+3D-Speaker speaker-embedding model. They are declared in `DiarizationModelCatalog.cs` (deliberately
+kept separate from `AsrModelCatalog.cs`) and are installed the same way:
+
+```powershell
+# Segmentation (pyannote) + embedding (3D-Speaker) into the repository models/ root
+dotnet run --project tools/ModelManager -- install --id pyannote-segmentation-3-0
+dotnet run --project tools/ModelManager -- install --id 3dspeaker-eres2net-base-zh-16k
+
+# …or into the APPLICATION data dir so the app can diarize
+dotnet run --project tools/ModelManager -- install --id pyannote-segmentation-3-0 `
+    --models-root "$env:LOCALAPPDATA\SubtitleJun\models"
+dotnet run --project tools/ModelManager -- install --id 3dspeaker-eres2net-base-zh-16k `
+    --models-root "$env:LOCALAPPDATA\SubtitleJun\models"
+```
+
+`list` / `verify` / `install` see the diarization models too: the tool defaults to a combined
+catalog (`--catalog all`); pass `--catalog asr` or `--catalog diarization` to restrict it:
+
+```powershell
+dotnet run --project tools/ModelManager -- list --catalog all
+dotnet run --project tools/ModelManager -- verify --catalog diarization `
+    --models-root "$env:LOCALAPPDATA\SubtitleJun\models"
 ```
 
 - **Default models root:** the tool walks up from its own directory to find the solution

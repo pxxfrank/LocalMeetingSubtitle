@@ -82,6 +82,12 @@ public sealed class AppSettings
     public bool ExportIncludeTimestamps { get; set; } = true;
     public bool EnableVadSegmenting { get; set; } = true;
     public string Theme { get; set; } = "Light";
+
+    /// <summary>Expected number of speakers for post-meeting diarization; 0 means automatic.</summary>
+    public int DiarizationSpeakerCount { get; set; }
+
+    /// <summary>Diarization clustering threshold (higher merges more aggressively → fewer speakers).</summary>
+    public double DiarizationClusteringThreshold { get; set; } = 0.5;
 }
 
 public sealed class PerformanceMetric

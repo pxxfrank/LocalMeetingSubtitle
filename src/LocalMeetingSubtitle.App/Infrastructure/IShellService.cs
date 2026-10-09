@@ -23,4 +23,7 @@ public interface IShellService
 
     /// <summary>Show a balloon/tray notification (best effort).</summary>
     void Notify(string title, string message);
+
+    /// <summary>Shows a file-open dialog for a meeting recording; returns null when cancelled.</summary>
+    string? PickAudioFile();
 }

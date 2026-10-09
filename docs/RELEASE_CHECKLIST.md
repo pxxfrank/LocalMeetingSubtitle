@@ -15,7 +15,7 @@ Legend: `PASS` = verified with evidence · `PARTIAL` = some sub-checks pass, oth
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | AC-01 | 在目标硬件与操作系统上运行（Windows 11 + Core Ultra 7 155H + Arc iGPU + AI Boost NPU） | 在目标笔记本安装并启动应用并完成一次转写 | 正常启动并输出字幕 | 未执行（无该机器） | — | 目标硬件 (Win11) | **BLOCKED** |
 | AC-02 | 解决方案可完整构建 | `dotnet build LocalMeetingSubtitle.sln` | 0 错误 | 0 错误（测试桩有少量良性 CS0067 警告） | 构建日志 | 开发主机 Win10 | **PASS** |
-| AC-03 | 单元测试全部通过 | `dotnet test …UnitTests…` | 全通过 | 112 通过 / 0 失败 | 测试输出 | 开发主机 | **PASS** |
+| AC-03 | 单元测试全部通过 | `dotnet test …UnitTests…` | 全通过 | 136 通过 / 0 失败 | 测试输出 | 开发主机 | **PASS** |
 | AC-04 | 目标硬件上的实时字幕时延/吞吐达标 | 目标机运行真实会议并测量 | 首字 ≤1.5 s、结尾 ≤1 s | 未执行 | — | 目标硬件 | **NOT_TESTED** |
 | AC-05 | 目标硬件上的 CPU/内存占用达标 | 目标机运行并采样 `ProcessPerformanceMonitor` | CPU ≤25%、内存 ≤1 GB | 未执行 | — | 目标硬件 | **NOT_TESTED** |
 | AC-06 | 端到端实时转写（UI：开始→转写→落库） | 应用内点击开始播放真实会议音频 | 连续实时字幕并写入数据库 | 解码层 PASS（`AsrBenchmark` 真实模型出文本）；UI 端到端未走通（无真实音频、应用数据目录内未装模型） | AsrBenchmark 输出；`MainViewModel` 逻辑 | 开发主机 | **PARTIAL/BLOCKED** |
@@ -39,3 +39,41 @@ Legend: `PASS` = verified with evidence · `PARTIAL` = some sub-checks pass, oth
 - 依赖真实 **Windows 11 目标硬件** 的 P0 条目（至少 AC-01、AC-04、AC-05、AC-09、AC-17 的目标机部分、AC-20 的目标机部分）全部为 **BLOCKED / NOT_TESTED**。
 - 因此本次发布是 **候选发布版本（candidate pending hardware acceptance）**，**不是**已验收版本。
 - 开发主机上可验证的部分（构建、单元/集成/性能测试、真实模型解码、WASAPI 采集、离线校验、发布产物生成）均已 **PASS** 或有明确的部分结论。
+
+---
+
+## Speaker-diarization acceptance matrix (SD-01 .. SD-18) — V0.4.1
+
+> Same rules as above: only executed facts are recorded; anything not run is `NOT_TESTED` / `BLOCKED`.
+> Scope note: **V0.4.1 (会后离线分离 + 对齐 + 匿名编号) is implemented**; **V0.4.2** (rename / merge /
+> reassign / by-speaker filter + export) and **V0.4.3** (dual-stream / near-real-time) are **not started**,
+> so the items that need them are `NOT_TESTED` even where the storage layer already supports them.
+
+| 编号 | 验收内容 | 验证方法 | 预期 | 实际 | 证据 | 环境 | 状态 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| SD-01 | 旧版本字幕功能正常 | 回归：既有单元/集成/性能测试 | 全通过 | 136 单元 / 10 集成 / 3 性能(+1 跳过) 全通过；迁移为纯新增 | 测试输出 | 开发主机 | **PASS** |
+| SD-02 | 可导入本地音频进行分角色分析 | 页脚「说话人」→ 选择音频；`SpeakerDiarizationService` | 完成分析 | 端到端用例：`NaudioAudioFileLoader` 解码 → 分角色 → 落库，`success=True` | `SpeakerDiarizationRealModelTests` | 开发主机 | **PASS** |
+| SD-03 | 可自动生成匿名发言人编号 | `SpeakerCountMode.Auto` | 输出 A/B/… | 真实 2 人音频 → `speakers=2`（标签 A、B） | 集成测试输出 | 开发主机 | **PASS** |
+| SD-04 | 可手动指定发言人数 | `SpeakerCountMode.Manual` → `FastClusteringConfig.NumClusters` | 生效 | 链路已实现（`DiarizationRequest.ManualSpeakerCount` + 设置项 `DiarizationSpeakerCount`）；**尚无独立 UI 控件**，未在真实音频上对比 | 代码/设置 | 开发主机 | **PARTIAL** |
+| SD-05 | 字幕与说话人时间对齐 | `SpeakerAlignmentService` + 集成测试 | 逐句归属 | 2 条字幕 → 分属 2 个不同发言人 | 集成测试输出 | 开发主机 | **PASS** |
+| SD-06 | 未知或歧义发言人可被标记 | 单元测试 | 未知=空、歧义=待确认 | 无重叠→`null`；近似均分→`NeedsConfirmation=true`；精确平局→未知+待确认 | `SpeakerAlignmentServiceTests` | 开发主机 | **PASS** |
+| SD-07 | 可修改发言人名称 | UI（V0.4.2） | 重命名并同步 | 仓储支持（`DisplayName` + `UpsertSpeakerAsync`）；**无 UI** | — | — | **NOT_TESTED** |
+| SD-08 | 可合并错误拆分的发言人 | UI（V0.4.2） | 合并 + 撤销 | `MergeSpeakersAsync` 已实现并有单测（重指向 + 受影响 id + 标记 merged）；**无 UI** | `SqliteSpeakerRepositoryTests` | 开发主机 | **NOT_TESTED（底层已 PASS）** |
+| SD-09 | 可修改单条字幕的发言归属 | UI（V0.4.2） | 手动改派并持久化 | `SetAssignmentSpeakerAsync` + 单测（人工行不被重分析覆盖）；**无 UI** | `SqliteSpeakerRepositoryTests` | 开发主机 | **NOT_TESTED（底层已 PASS）** |
+| SD-10 | 人工修改能够持久保存 | 单元测试 | 重分析不覆盖人工 | `Source=Manual` 行在 `overwriteManual:false` 下保持不变 | `SqliteSpeakerRepositoryTests` | 开发主机 | **PASS** |
+| SD-11 | 按角色导出正确 | 导出（V0.4.2） | 分角色 TXT/MD/CSV/SRT | 未实现 | — | — | **NOT_TESTED** |
+| SD-12 | 原有会议历史正常打开 | 迁移 4 + 既有仓储测试 | 旧库可读 | 迁移为 `CREATE TABLE IF NOT EXISTS`，`segments` 未被改动；v3 库升级后既有查询不变 | `SqliteDatabaseTests` | 开发主机 | **PASS** |
+| SD-13 | 无网络可完成分角色分析 | 断网/离线校验 | 无需网络 | 模型仅经 `ModelDownloads`（隔离）下载；分析在本机真实模型上完成，运行期无 `System.Net.Http` | 集成测试 + `OfflineVerification` | 开发主机 | **PASS** |
+| SD-14 | 不影响正常会议播放 | 实机播放验证 | 无异常 | 未执行（无目标硬件/真实会议） | — | 目标硬件 | **NOT_TESTED** |
+| SD-15 | 不导致实时 ASR 持续积压 | 目标机并发压测 | 队列不持续增长 | 隔离设计已就位（独立 **BelowNormal** 线程、`SemaphoreSlim(1,1)` 单任务、低线程上限、按文件读取不经实时队列）；**未在目标机并发实测** | 代码 | 目标硬件 | **NOT_TESTED** |
+| SD-16 | 可取消任务并安全恢复 | 触发取消 | 可取消且状态一致 | `CancellationToken` 贯穿解码/引擎/落库；原生回调返回非零即中止；结果落库为 `Cancelled`。**未做端到端取消演示** | 代码 | 开发主机 | **PARTIAL** |
+| SD-17 | 临时音频删除策略正确 | 检查临时文件生命周期 | 到期清理、崩溃可恢复 | `audio_assets` 表 + `IsTemporary`/`DeleteAfterUtc` + `GetExpiredTemporaryAsync` 有单测；**采集侧录制与启动清理尚未接线** | `SqliteSpeakerRepositoryTests` | 开发主机 | **PARTIAL** |
+| SD-18 | 真实多发言人音频验证通过 | 真实 2 人音频分析 | 正确区分并归属 | 2 人片段 → speaker 0（前）与 speaker 1（后）正确区分（置信度 0.84–0.97）；字幕正确归属；`OriginalText` 未改动 | `SpeakerDiarizationRealModelTests` | 开发主机 | **PASS** |
+
+### SD summary
+
+- **本版本交付 V0.4.1**（导入 → 离线分离 → 对齐 → 匿名编号 → 字幕板标签），SD-01/02/03/05/06/10/12/13/18 在开发主机 **PASS**。
+- SD-07/08/09/11 属 **V0.4.2**（角色校正与分角色导出），**尚未实现**（其中 08/09 的存储层已实现并有单测）。
+- SD-14/15 需**目标硬件/真实会议**并发验证，标记 **NOT_TESTED**（设计上的性能隔离已就位）。
+- SD-04/16/17 为 **PARTIAL**（链路已就位，缺 UI 或端到端演示）。
+- 因此 **V0.4 整体为 Release Candidate**，不得宣称已通过实机验收。

@@ -157,6 +157,21 @@
             </DockPanel>
         </Border>
 
+        <!-- ================= Diarization progress ================= -->
+        <Border DockPanel.Dock="Top" Margin="14,0,14,8" Padding="12,9"
+                Background="{DynamicResource BgSurface}"
+                BorderBrush="{DynamicResource BorderDefault}" BorderThickness="1"
+                CornerRadius="{DynamicResource RadiusSmall}"
+                Visibility="{Binding HasDiarizationStatus, Converter={StaticResource BoolToVis}}">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Left" Text="{Binding DiarizationStatusText}" VerticalAlignment="Center"
+                           Margin="0,0,12,0" FontSize="12" Foreground="{DynamicResource TextSecondary}" />
+                <ProgressBar Height="6" Minimum="0" Maximum="1"
+                             Value="{Binding DiarizationProgress, Mode=OneWay}"
+                             VerticalAlignment="Center" />
+            </DockPanel>
+        </Border>
+
         <!-- ================= Search bar ================= -->
         <Border DockPanel.Dock="Top" Margin="14,0,14,8" Padding="10,6"
                 Background="{DynamicResource BgSurface}"
@@ -221,6 +236,15 @@
                             <TextBlock Text="导出 / Export" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
+                    <Button Style="{StaticResource BtnGhost}" Command="{Binding ImportAndDiarizeCommand}" Margin="0,0,4,0"
+                            ToolTip="导入会议录音，离线识别发言人 / import a recording and diarize speakers">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{StaticResource IconUsers}" Stroke="{DynamicResource TextSecondary}"
+                                  StrokeThickness="1.6" Fill="Transparent" Width="17" Height="17" Stretch="Uniform"
+                                  VerticalAlignment="Center" Margin="0,0,7,0" />
+                            <TextBlock Text="说话人 / Speakers" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                     <Button Style="{StaticResource BtnGhost}" Click="OnCopyClick" Margin="0,0,4,0">
                         <StackPanel Orientation="Horizontal">
                             <Path Data="{StaticResource IconCopy}" Stroke="{DynamicResource TextSecondary}"
@@ -269,12 +293,17 @@
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock x:Name="Ts" Grid.Column="0" Text="{Binding Timestamp}"
                                                Foreground="{DynamicResource TextMuted}" FontFamily="Consolas"
                                                Margin="0,0,10,0" VerticalAlignment="Top" FontSize="12" />
-                                    <TextBlock x:Name="Body" Grid.Column="1" Text="{Binding Text}" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="SpeakerTag" Grid.Column="1" Text="{Binding SpeakerLabel}"
+                                               Foreground="{Binding SpeakerBrush}" FontWeight="SemiBold"
+                                               Margin="0,0,10,0" VerticalAlignment="Top" FontSize="12"
+                                               Visibility="{Binding HasSpeaker, Converter={StaticResource BoolToVis}}" />
+                                    <TextBlock x:Name="Body" Grid.Column="2" Text="{Binding Text}" TextWrapping="Wrap" />
                                 </Grid>
                             </Border>
                             <DataTemplate.Triggers>
@@ -287,6 +316,11 @@
                                 <DataTrigger Binding="{Binding IsMatch}" Value="True">
                                     <Setter TargetName="RowBg" Property="Border.Background"
                                             Value="{DynamicResource AccentSoft}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding NeedsSpeakerConfirmation}" Value="True">
+                                    <Setter TargetName="SpeakerTag" Property="TextBlock.FontStyle" Value="Italic" />
+                                    <Setter TargetName="SpeakerTag" Property="ToolTip"
+                                            Value="自动判定不确定，建议人工确认 / ambiguous – please confirm" />
                                 </DataTrigger>
                             </DataTemplate.Triggers>
                         </DataTemplate>

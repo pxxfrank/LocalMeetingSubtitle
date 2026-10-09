@@ -125,7 +125,33 @@ dotnet run --project tools/ModelManager -- install --id streaming-zipformer-zh-1
 4. 导出文件默认建议保存到 `%LOCALAPPDATA%\SubtitleJun\exports\`，也可另存到任意位置。
 5. 只有**已定稿**的字幕行会被导出（临时字幕不导出）。
 
-## 12. 托盘操作
+## 12. 会后说话人分离（匿名发言人标签）
+
+会议结束后，可以**导入一段录音**，让程序分析出「谁在什么时候说话」，并给每条字幕标上发言人标签（A、B、…）。
+
+1. 先确认已下载**两个说话人分离模型**（与语音识别模型是分开的）。在源码目录执行：
+
+   ```powershell
+   $env:PATH = "$env:USERPROFILE\.dotnet;$env:PATH"   # 若 .NET 不在 PATH
+   dotnet run --project tools/ModelManager -- install --id pyannote-segmentation-3-0 `
+       --models-root "$env:LOCALAPPDATA\SubtitleJun\models"
+   dotnet run --project tools/ModelManager -- install --id 3dspeaker-eres2net-base-zh-16k `
+       --models-root "$env:LOCALAPPDATA\SubtitleJun\models"
+   ```
+
+   用 `dotnet run --project tools/ModelManager -- list` 可查看是否已安装（行首显示 `[x]` 即已安装）。
+2. 回到主界面，点击底部操作栏的 **「说话人 / Speakers」** 按钮。
+3. 在弹出的文件对话框中选择一个录音文件（支持 `wav` / `mp3` / `flac` / `m4a` / `aac` / `wma` / `aiff` / `ogg`）。
+4. 分析在后台进行（底部会出现进度条），完成后每条字幕会显示**发言人标签**（A、B、C…），不同发言人用不同颜色区分。
+
+> **重要：** 这里的 A / B / … 是**声纹聚类出的匿名编号**，只是把「听起来像同一个人的片段」聚在一起，
+> **不是身份识别**，不代表真实姓名或身份。分析完成后仍需你人工判断谁说了哪句。
+>
+> 说话人分离在**后台低优先级线程**上运行，一次只跑一个，不会影响正在进行的实时转写。
+
+> 目前还没有「重命名发言人 / 合并发言人 / 逐条改派」的界面，也**没有专门的人数开关**：期望人数与聚类阈值来自设置项 `DiarizationSpeakerCount`（0 = 自动，默认）和 `DiarizationClusteringThreshold`（默认 0.5）。这些功能计划在后续版本补齐。详见 [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) 的 P3-6 / P3-7。
+
+## 13. 托盘操作
 
 程序最小化后在**通知区域（托盘）**有图标，**双击**可重新打开主窗口。右键菜单包含：
 
@@ -140,12 +166,12 @@ dotnet run --project tools/ModelManager -- install --id streaming-zipformer-zh-1
 
 > 默认情况下，点击主窗口右上角的“关闭”是**最小化到托盘**（不退出）。要真正退出，请用托盘菜单的“退出”。
 
-## 13. 退出
+## 14. 退出
 
 - **托盘菜单 →“退出 / Exit”**：会先优雅地停止转写、保存后退出。
 - 直接关闭主窗口只是隐藏到托盘；程序仍在后台运行。
 
-## 14. 数据与隐私
+## 15. 数据与隐私
 
 - 所有数据都在本机 `%LOCALAPPDATA%\SubtitleJun\`：
   - `subtitles.db`：会话、字幕、热词、设置、性能指标（SQLite，WAL 模式）。
@@ -154,7 +180,7 @@ dotnet run --project tools/ModelManager -- install --id streaming-zipformer-zh-1
   - `exports\`：导出文件。
 - 运行时**不联网**：识别链路不包含任何网络调用（可由 `tools/OfflineVerification` 校验）。
 
-## 15. 排查：没有声音 / 没有字幕
+## 16. 排查：没有声音 / 没有字幕
 
 按顺序检查：
 

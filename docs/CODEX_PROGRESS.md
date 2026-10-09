@@ -422,3 +422,71 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
     `SystemIcons.Application` (the generic system icon), with a fallback if loading fails.
 - Unit **118** + integration **10** pass.
 - Version bumped to **0.3.10**; MSI + Burn bundle + portable ZIP rebuilt and re-signed.
+
+## Update — 离线说话人分离 V0.4.1 / offline speaker diarization (v0.4.0) (2026-10-09)
+
+**目标:** 在**不破坏**现有实时字幕的前提下，增加**会后离线说话人分离**——导入本地会议录音 →
+自动/手动设定发言人数 → 声纹聚类得到发言区间 → 与已有 ASR 字幕按统一音频时间轴对齐 →
+在字幕板显示「发言人 A/B/…」。匿名编号，不宣称身份识别。
+
+### 技术选型（已核实，未升级依赖）
+- 复用现有 **sherpa-onnx 1.13.8**：其 C# API 已包含完整离线说话人分离栈
+  （`OfflineSpeakerDiarization` + `OfflineSpeakerSegmentationModelConfig`(pyannote) +
+  `SpeakerEmbeddingExtractorConfig` + `FastClusteringConfig` + `OfflineSpeakerDiarizationSegment`）。
+  **无需版本升级 → 现有 ASR 无回归风险**。
+- 模型（`Asr/DiarizationModelCatalog.cs`，与 `AsrModelCatalog` **分离**，避免被选作实时识别模型）：
+
+  | 角色 | 模型 | 大小 | 许可证 | 来源 |
+  | --- | --- | --- | --- | --- |
+  | 说话人分段 | `sherpa-onnx-pyannote-segmentation-3-0` (`model.onnx`) | 5.72 MB | **MIT** (pyannote/CNRS) | HF `csukuangfj/...` |
+  | 说话人声纹 | `3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx` | 37.76 MB | **Apache-2.0** (3D-Speaker) | GH `k2-fsa/sherpa-onnx` 发布 |
+
+  声纹模型 SHA-256 `1a331345f04805badbb495c775a6ddffcdd1a732567d5ec8b3d5749e3c7a5e4b`
+  （本机下载已逐字节校验一致）。下载仅在安装/开发期经 `ModelDownloads`（隔离程序集）进行；
+  运行期识别链路仍无网络引用。
+
+### 新增模块（全部增量，未改动既有类型的语义）
+- 契约/模型：`Core/Models/SpeakerModels.cs`、`Core/Abstractions/SpeakerAbstractions.cs`
+  （`ISpeakerDiarizationEngine`、`ISpeakerDiarizationService`、`ISpeakerAlignmentService`、
+  `ISpeakerRepository`、`IAudioAssetRepository`、`IAudioFileLoader`）。
+- 纯算法：`Core/Speakers/SpeakerAlignmentService.cs`（区间重叠 → 每句最多一个发言人；歧义标记待确认；
+  无重叠 => 未知发言人，绝不强配；**绝不修改 `OriginalText`**）、`Core/Speakers/SpeakerColorPalette.cs`。
+- 编排：`Core/Speakers/SpeakerDiarizationService.cs`（**独立后台线程 + `BelowNormal` 优先级**；
+  `SemaphoreSlim(1,1)` 单任务；协作式取消；进度回调；失败仅落库为 `DiarizationRun.Status=Failed`，不致命）。
+- 引擎：`Asr/SherpaOfflineSpeakerDiarizer.cs`（线程数上限低，默认 `clamp(ProcessorCount/4,1,4)`；
+  校验 16 kHz；**仅当模型提供置信度时才记录，绝不伪造**）。
+- 文件解码：`Audio/NaudioAudioFileLoader.cs`（`AudioFileReader` + 现有 `DefaultAudioPreprocessor` 下混/重采样到 16 kHz）。
+- 存储：迁移 **4**（`diarization_runs`、`speakers`、`speaker_intervals`、`speaker_assignments`、`audio_assets`）
+  ——**纯新增表，旧库照常打开**；`Storage/SqliteSpeakerRepository.cs`、`Storage/SqliteAudioAssetRepository.cs`。
+  人工修改的行（`Source=Manual`）在重新分析时**不会被覆盖**（`ON CONFLICT ... WHERE Source=0`）。
+- 界面：字幕行新增**发言人彩色标签**（`MainViewModel`/`SubtitleLineViewModel`）；页脚新增
+  「说话人 / Speakers」按钮（导入录音并分析）与进度条；**悬浮字幕窗口未改动**；14 英寸布局不受挤压。
+
+### 实测证据（开发主机，真实模型 + 真实音频）
+构造 2 人片段（fangjun-sr-1 ×2 + leijun-sr-1 ×2，约 14.1 s）→ 引擎输出：
+
+```
+00:00.03 - 00:01.87  speaker 0  confidence 0.890
+00:02.81 - 00:04.46  speaker 0  confidence 0.843
+00:05.54 - 00:07.33  speaker 1  confidence 0.964
+00:07.87 - 00:09.37  speaker 1  confidence 0.964
+00:10.00 - 00:11.82  speaker 1  confidence 0.965
+00:12.33 - 00:13.96  speaker 1  confidence 0.966
+```
+
+端到端服务：`success=True speakers=2 assigned=2 confirm=0`；两条字幕分别归属不同发言人；
+`OriginalText` 未被改动。两个用例在缺模型时自动跳过（干净克隆仍绿）。
+
+### 测试
+- 单元 **118 → 136**（对齐算法 10 例；仓储/迁移 8 例）。
+- 集成 **10 → 12**（真实模型说话人分离 + 端到端对齐落库）。
+- 性能：**3 通过 + 1 跳过**（`ThreeHourSoak` 仍未执行）。
+- **未回归**：既有 118 单元 / 10 集成 / 3 性能全部保持通过。
+
+### 版本
+- 版本升至 **0.4.0**（`Directory.Build.props`、`installer/Product.wxs`、`installer/Bundle.wxs`）。
+
+### 未完成 / 阻塞（详见 RELEASE_CHECKLIST SD-01..SD-18）
+- **V0.4.2**（发言人重命名 / 合并 / 单条重分配 / 分角色过滤与导出）与 **V0.4.3**（双路采集、准实时）**尚未开始**。
+- 会后**录音采集侧**尚未接入（当前仅支持**导入**本地音频文件）；临时音频生命周期管理表已就位但未接线。
+- 无目标硬件 → 实时+会后并发的真实性能对比、3 小时 soak 仍未执行。
