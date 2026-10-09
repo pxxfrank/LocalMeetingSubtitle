@@ -88,7 +88,7 @@ public partial class App : Application
         ApplyStartupTheme();
 
         _logger.Info("Services built; creating shell.");
-        _shell = new ShellService(_logger, CreateSettingsViewModel, RequestExit,
+        _shell = new ShellService(_logger, CreateSettingsViewModel, CreateSpeakerManagementViewModel, RequestExit,
             (title, message) => _tray?.ShowBalloon(title, message));
 
         _logger.Info("Shell created; creating view-model.");
@@ -172,6 +172,16 @@ public partial class App : Application
         return new SettingsViewModel(
             services.GetRequiredService<ISettingsRepository>(),
             services.GetRequiredService<IHotwordRepository>(),
+            _mainViewModel!,
+            _logger!);
+    }
+
+    private SpeakerManagementViewModel CreateSpeakerManagementViewModel()
+    {
+        var services = _services!;
+        return new SpeakerManagementViewModel(
+            services.GetRequiredService<ISpeakerRepository>(),
+            services.GetRequiredService<ISubtitleRepository>(),
             _mainViewModel!,
             _logger!);
     }

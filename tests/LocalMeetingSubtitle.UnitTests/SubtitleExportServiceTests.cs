@@ -120,6 +120,7 @@ public sealed class SubtitleExportServiceTests : IDisposable
     [InlineData(ExportFormat.Txt, ".txt")]
     [InlineData(ExportFormat.Srt, ".srt")]
     [InlineData(ExportFormat.Markdown, ".md")]
+    [InlineData(ExportFormat.Csv, ".csv")]
     public void GetExtension_ReturnsExpected(ExportFormat format, string expected)
     {
         Assert.Equal(expected, new SubtitleExportService().GetExtension(format));
@@ -131,8 +132,8 @@ public sealed class SubtitleExportServiceTests : IDisposable
         var service = new SubtitleExportService();
 
         Assert.Equal(
-            new[] { ExportFormat.Txt, ExportFormat.Srt, ExportFormat.Markdown },
+            new[] { ExportFormat.Txt, ExportFormat.Srt, ExportFormat.Markdown, ExportFormat.Csv },
             service.SupportedFormats);
-        Assert.Equal(3, SubtitleExportService.DefaultFormatters().Count);
+        Assert.Equal(4, SubtitleExportService.DefaultFormatters().Count);
     }
 }

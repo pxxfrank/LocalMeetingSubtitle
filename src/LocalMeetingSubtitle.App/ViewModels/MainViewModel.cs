@@ -101,6 +101,7 @@ public sealed class MainViewModel : ObservableObject
         ImportAndDiarizeCommand = new AsyncRelayCommand(ImportAndDiarizeAsync, () => _session is not null && !IsDiarizing);
         ToggleSearchCommand = new RelayCommand(() => IsSearchVisible = !IsSearchVisible);
         OpenSettingsCommand = new RelayCommand(() => Shell.ShowSettings());
+        OpenSpeakerManagementCommand = new RelayCommand(() => Shell.ShowSpeakerManagement());
         ToggleFloatingCommand = new RelayCommand(() => Shell.ToggleFloating());
         ReturnToLatestCommand = new RelayCommand(() => IsTailLocked = true);
         DismissWarningCommand = new RelayCommand(() => HasWarning = false);
@@ -127,6 +128,7 @@ public sealed class MainViewModel : ObservableObject
     public AsyncRelayCommand ImportAndDiarizeCommand { get; }
     public RelayCommand ToggleSearchCommand { get; }
     public RelayCommand OpenSettingsCommand { get; }
+    public RelayCommand OpenSpeakerManagementCommand { get; }
     public RelayCommand ToggleFloatingCommand { get; }
     public RelayCommand ReturnToLatestCommand { get; }
     public RelayCommand DismissWarningCommand { get; }
@@ -387,6 +389,9 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>Segments of the current session (for export/search).</summary>
     public IReadOnlyList<SubtitleSegment> Segments => _segments;
 
+    /// <summary>The id of the active session, or <c>null</c> before one has started.</summary>
+    public string? CurrentSessionId => _session?.SessionId;
+
     // =====================================================================
     // Speaker diarization (post-meeting, offline)
     // =====================================================================
@@ -395,6 +400,29 @@ public sealed class MainViewModel : ObservableObject
     private double _diarizationProgress;
     private string _diarizationStatusText = "";
     private bool _hasSpeakers;
+    private SpeakerFilterItem? _selectedSpeakerFilter;
+
+    /// <summary>By-speaker filter entries ("全部 / All" plus one per non-merged speaker).</summary>
+    public ObservableCollection<SpeakerFilterItem> SpeakerFilters { get; } = new();
+
+    /// <summary>
+    /// The active by-speaker filter. Selecting an entry hides every row whose assigned speaker
+    /// does not match; selecting "全部 / All" (a <c>null</c> speaker id) shows everything.
+    /// </summary>
+    public SpeakerFilterItem? SelectedSpeakerFilter
+    {
+        get => _selectedSpeakerFilter;
+        set
+        {
+            if (SetProperty(ref _selectedSpeakerFilter, value))
+            {
+                ApplySpeakerFilter();
+            }
+        }
+    }
+
+    /// <summary>True when there is more than the single "全部 / All" entry, i.e. a filter is worth showing.</summary>
+    public bool HasSpeakerFilter => SpeakerFilters.Count > 1;
 
     /// <summary>True while a post-meeting diarization run is in flight.</summary>
     public bool IsDiarizing
@@ -477,7 +505,7 @@ public sealed class MainViewModel : ObservableObject
 
             if (result.Success)
             {
-                await ReloadSpeakersAsync().ConfigureAwait(true);
+                await RefreshSpeakersAsync().ConfigureAwait(true);
                 DiarizationStatusText = $"完成：{result.SpeakerCount} 位发言人，{result.AssignedSegments} 条字幕已归属 / done";
                 RaiseWarning($"说话人分离完成 / diarization done：{result.SpeakerCount} speakers, {result.AssignedSegments} segments, {result.NeedsConfirmation} need confirmation.");
             }
@@ -499,8 +527,12 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    /// <summary>Loads speakers + assignments for the current session and applies the tags to the view.</summary>
-    private async Task ReloadSpeakersAsync()
+    /// <summary>
+    /// Loads speakers + assignments for the current session, re-applies the speaker tags to every
+    /// row and rebuilds the by-speaker filter. Public so the speaker-management window can push
+    /// its edits back into the main view.
+    /// </summary>
+    public async Task RefreshSpeakersAsync()
     {
         if (_session is null)
         {
@@ -528,23 +560,68 @@ public sealed class MainViewModel : ObservableObject
         }
 
         HasSpeakers = _assignments.Values.Any(a => a.SpeakerId is not null);
+        RebuildSpeakerFilters(speakers);
         SubtitleChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Rebuilds the filter combo, keeping the current selection when that speaker still exists.</summary>
+    private void RebuildSpeakerFilters(IReadOnlyList<Speaker> speakers)
+    {
+        var previousId = _selectedSpeakerFilter?.SpeakerId;
+
+        SpeakerFilters.Clear();
+        SpeakerFilters.Add(new SpeakerFilterItem(null, "全部 / All"));
+        foreach (var speaker in speakers.Where(s => !s.IsMerged).OrderBy(s => s.SortOrder))
+        {
+            SpeakerFilters.Add(new SpeakerFilterItem(speaker.SpeakerId, SpeakerDisplayName(speaker)));
+        }
+
+        // Re-point the selection: a stable speaker id wins, otherwise fall back to "All".
+        SelectedSpeakerFilter = SpeakerFilters.FirstOrDefault(f => f.SpeakerId == previousId) ?? SpeakerFilters[0];
+        OnPropertyChanged(nameof(HasSpeakerFilter));
+    }
+
+    private void ApplySpeakerFilter()
+    {
+        foreach (var line in Lines)
+        {
+            line.IsSpeakerVisible = IsSpeakerIdVisible(SpeakerIdForLine(line));
+        }
     }
 
     private void ApplySpeakerToLine(SubtitleLineViewModel line)
     {
+        var speakerId = SpeakerIdForLine(line);
+
+        line.IsSpeakerVisible = IsSpeakerIdVisible(speakerId);
+
         if (line.Segment is null
+            || speakerId is null
             || !_assignments.TryGetValue(line.Segment.SegmentId, out var assignment)
-            || assignment.SpeakerId is null
-            || !_speakersById.TryGetValue(assignment.SpeakerId, out var speaker))
+            || !_speakersById.TryGetValue(speakerId, out var speaker))
         {
             line.SetSpeaker(null, 0, false);
             return;
         }
 
-        var name = string.IsNullOrWhiteSpace(speaker.DisplayName) ? "发言人 " + speaker.Label : speaker.DisplayName;
-        line.SetSpeaker(name, speaker.ColorArgb, assignment.NeedsConfirmation);
+        line.SetSpeaker(SpeakerDisplayName(speaker), speaker.ColorArgb, assignment.NeedsConfirmation);
     }
+
+    /// <summary>The assigned speaker id for a row, or <c>null</c> when unknown/unassigned.</summary>
+    private string? SpeakerIdForLine(SubtitleLineViewModel line) =>
+        line.Segment is not null && _assignments.TryGetValue(line.Segment.SegmentId, out var assignment)
+            ? assignment.SpeakerId
+            : null;
+
+    /// <summary>True when a row with the given speaker passes the active filter (a null filter shows all).</summary>
+    private bool IsSpeakerIdVisible(string? speakerId)
+    {
+        var filterId = _selectedSpeakerFilter?.SpeakerId;
+        return filterId is null || string.Equals(filterId, speakerId, StringComparison.Ordinal);
+    }
+
+    private static string SpeakerDisplayName(Speaker speaker) =>
+        string.IsNullOrWhiteSpace(speaker.DisplayName) ? "发言人 " + speaker.Label : speaker.DisplayName;
 
     // =====================================================================
     // Initialization
@@ -855,7 +932,7 @@ public sealed class MainViewModel : ObservableObject
             Title = "导出字幕 / Export subtitles",
             FileName = $"transcript-{DateTime.Now:yyyyMMdd-HHmmss}",
             InitialDirectory = EnsureExportsDirectory(),
-            Filter = "文本 / Text (*.txt)|*.txt|字幕 / SubRip (*.srt)|*.srt|Markdown (*.md)|*.md",
+            Filter = "文本 / Text (*.txt)|*.txt|字幕 / SubRip (*.srt)|*.srt|Markdown (*.md)|*.md|CSV (*.csv)|*.csv",
             FilterIndex = 1,
             AddExtension = true
         };
@@ -866,8 +943,16 @@ public sealed class MainViewModel : ObservableObject
         {
             ".srt" => ExportFormat.Srt,
             ".md" or ".markdown" => ExportFormat.Markdown,
+            ".csv" => ExportFormat.Csv,
             _ => ExportFormat.Txt
         };
+
+        // Populate the speaker column from the current assignments so speaker-aware formats can
+        // render it. SpeakerName lives only on the export copy, never in the database.
+        foreach (var segment in _segments)
+        {
+            segment.SpeakerName = SpeakerNameForSegment(segment.SegmentId);
+        }
 
         var session = _session ?? new MeetingSession { Title = "Export" };
         var request = new ExportRequest(session, _segments.ToList(), format, dialog.FileName, _settings.ExportIncludeTimestamps);
@@ -883,6 +968,23 @@ public sealed class MainViewModel : ObservableObject
             _log.Error("Export failed", ex);
             RaiseWarning("导出失败 / export failed：" + ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Resolves the speaker display name for one segment from the in-memory assignments: an
+    /// anonymous speaker renders as "发言人 &lt;label&gt;", a renamed one as its <c>DisplayName</c>,
+    /// and an unassigned/unknown segment yields <c>null</c> so the formatters omit the column.
+    /// </summary>
+    private string? SpeakerNameForSegment(long segmentId)
+    {
+        if (!_assignments.TryGetValue(segmentId, out var assignment)
+            || assignment.SpeakerId is null
+            || !_speakersById.TryGetValue(assignment.SpeakerId, out var speaker))
+        {
+            return null;
+        }
+
+        return SpeakerDisplayName(speaker);
     }
 
     /// <summary>Reloads hotwords and, when transcribing, hot-swaps the engine (applies next utterance).</summary>
@@ -1028,6 +1130,10 @@ public sealed class MainViewModel : ObservableObject
         _assignments.Clear();
         _speakersById.Clear();
         HasSpeakers = false;
+        SpeakerFilters.Clear();
+        _selectedSpeakerFilter = null;
+        OnPropertyChanged(nameof(SelectedSpeakerFilter));
+        OnPropertyChanged(nameof(HasSpeakerFilter));
         MatchCount = 0;
         OnPropertyChanged(nameof(HasLines));
         SubtitleChanged?.Invoke(this, EventArgs.Empty);

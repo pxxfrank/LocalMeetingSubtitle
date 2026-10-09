@@ -60,6 +60,12 @@
                             </Path>
                         </Button>
 
+                        <Button Style="{StaticResource BtnIcon}" Command="{Binding OpenSpeakerManagementCommand}"
+                                ToolTip="发言人管理 / Speaker management">
+                            <Path Data="{StaticResource IconUsers}" Stroke="{DynamicResource TextSecondary}"
+                                  StrokeThickness="1.6" Fill="Transparent" Width="18" Height="18" Stretch="Uniform" />
+                        </Button>
+
                         <Button Style="{StaticResource BtnIcon}" Command="{Binding OpenSettingsCommand}"
                                 ToolTip="设置 / Settings">
                             <Path Data="{StaticResource IconSettings}" Stroke="{DynamicResource TextSecondary}"
@@ -126,6 +132,11 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <ComboBox Width="150" Margin="0,0,12,0" VerticalAlignment="Center"
+                              ItemsSource="{Binding SpeakerFilters}" DisplayMemberPath="Name"
+                              SelectedItem="{Binding SelectedSpeakerFilter}"
+                              ToolTip="按发言人筛选 / Filter by speaker"
+                              Visibility="{Binding HasSpeakerFilter, Converter={StaticResource BoolToVis}}" />
                     <TextBlock VerticalAlignment="Center" Margin="0,0,14,0" FontSize="12"
                                Foreground="{DynamicResource TextMuted}" Text="{Binding LatencyText}" />
                     <Border Background="{DynamicResource BgSubtle}" CornerRadius="8" Padding="10,4"
@@ -289,7 +300,8 @@
                     </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <Border x:Name="RowBg" Padding="6,3" CornerRadius="6">
+                            <Border x:Name="RowBg" Padding="6,3" CornerRadius="6"
+                                    Visibility="{Binding IsSpeakerVisible, Converter={StaticResource BoolToVis}}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />

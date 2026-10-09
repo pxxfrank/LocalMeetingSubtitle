@@ -19,16 +19,61 @@ public sealed class MarkdownTranscriptFormatter : TranscriptFormatterBase
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(segments);
 
+        var ordered = Ordered(segments).ToList();
+        var hasSpeakers = ordered.Any(s => !string.IsNullOrEmpty(s.SpeakerName));
+
         var builder = new StringBuilder();
         builder.Append("# ").Append(session.Title).Append('\n');
         builder.Append('\n');
         builder.Append('_').Append(FormatDate(session.StartTime)).Append('_').Append('\n');
         builder.Append('\n');
 
-        foreach (var segment in Ordered(segments))
+        // Speaker sections appear only when diarization has run, so a plain transcript is unchanged.
+        if (hasSpeakers)
         {
-            builder.Append("- **").Append(FormatClock(segment.StartOffset)).Append("** ")
-                .Append(segment.DisplayText).Append('\n');
+            builder.Append("## 参与发言人 / Speakers").Append('\n');
+            builder.Append('\n');
+            foreach (var name in ordered
+                         .Where(s => !string.IsNullOrEmpty(s.SpeakerName))
+                         .Select(s => s.SpeakerName!)
+                         .Distinct())
+            {
+                builder.Append("- ").Append(name).Append('\n');
+            }
+
+            builder.Append('\n');
+            builder.Append("## 完整会议字幕 / Full transcript").Append('\n');
+            builder.Append('\n');
+        }
+
+        foreach (var segment in ordered)
+        {
+            builder.Append("- **").Append(FormatClock(segment.StartOffset)).Append("** ");
+            if (!string.IsNullOrEmpty(segment.SpeakerName))
+            {
+                builder.Append("**").Append(segment.SpeakerName).Append("** ");
+            }
+
+            builder.Append(segment.DisplayText).Append('\n');
+        }
+
+        if (hasSpeakers)
+        {
+            builder.Append('\n');
+            builder.Append("## 按发言人整理 / By speaker").Append('\n');
+            foreach (var group in ordered
+                         .Where(s => !string.IsNullOrEmpty(s.SpeakerName))
+                         .GroupBy(s => s.SpeakerName!))
+            {
+                builder.Append('\n');
+                builder.Append("### ").Append(group.Key).Append('\n');
+                builder.Append('\n');
+                foreach (var segment in group)
+                {
+                    builder.Append(FormatClock(segment.StartOffset)).Append(' ')
+                        .Append(segment.DisplayText).Append('\n');
+                }
+            }
         }
 
         return builder.ToString();

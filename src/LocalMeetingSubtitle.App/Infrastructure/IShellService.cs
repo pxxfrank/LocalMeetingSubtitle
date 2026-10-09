@@ -12,6 +12,9 @@ public interface IShellService
 
     void ShowSettings();
 
+    /// <summary>Shows the speaker-management window (rename / merge / reassign).</summary>
+    void ShowSpeakerManagement();
+
     bool IsFloatingVisible { get; }
 
     void SetFloatingVisible(bool visible);

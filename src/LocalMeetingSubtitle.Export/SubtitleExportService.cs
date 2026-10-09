@@ -28,7 +28,8 @@ public sealed class SubtitleExportService : ISubtitleExportService
     {
         new TxtTranscriptFormatter(),
         new SrtTranscriptFormatter(),
-        new MarkdownTranscriptFormatter()
+        new MarkdownTranscriptFormatter(),
+        new CsvTranscriptFormatter()
     };
 
     public IReadOnlyList<ExportFormat> SupportedFormats =>
@@ -39,6 +40,7 @@ public sealed class SubtitleExportService : ISubtitleExportService
         ExportFormat.Txt => ".txt",
         ExportFormat.Srt => ".srt",
         ExportFormat.Markdown => ".md",
+        ExportFormat.Csv => ".csv",
         _ => throw new NotSupportedException($"Unsupported export format '{format}'.")
     };
 

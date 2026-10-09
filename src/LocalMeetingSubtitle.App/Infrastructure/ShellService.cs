@@ -13,22 +13,26 @@ public sealed class ShellService : IShellService
 {
     private readonly IAppLogger _log;
     private readonly Func<SettingsViewModel> _settingsFactory;
+    private readonly Func<SpeakerManagementViewModel> _speakerManagementFactory;
     private readonly Action _requestExit;
     private readonly Action<string, string> _notify;
 
     private MainViewModel? _main;
     private MainWindow? _mainWindow;
     private SettingsWindow? _settingsWindow;
+    private SpeakerManagementWindow? _speakerManagementWindow;
     private FloatingSubtitleWindow? _floatingWindow;
 
     public ShellService(
         IAppLogger log,
         Func<SettingsViewModel> settingsFactory,
+        Func<SpeakerManagementViewModel> speakerManagementFactory,
         Action requestExit,
         Action<string, string> notify)
     {
         _log = log;
         _settingsFactory = settingsFactory;
+        _speakerManagementFactory = speakerManagementFactory;
         _requestExit = requestExit;
         _notify = notify;
     }
@@ -86,6 +90,36 @@ public sealed class ShellService : IShellService
             {
                 _log.Error("Failed to open settings window", ex);
                 MessageBox.Show("Unable to open settings: " + ex.Message, "字幕君",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        });
+    }
+
+    public void ShowSpeakerManagement()
+    {
+        UiDispatcher.Invoke(() =>
+        {
+            if (_speakerManagementWindow is { IsVisible: true })
+            {
+                _speakerManagementWindow.Activate();
+                return;
+            }
+
+            try
+            {
+                var vm = _speakerManagementFactory();
+                _speakerManagementWindow = new SpeakerManagementWindow { DataContext = vm };
+                _ = vm.LoadAsync();
+                if (_mainWindow is { IsVisible: true })
+                {
+                    _speakerManagementWindow.Owner = _mainWindow;
+                }
+                _speakerManagementWindow.Show();
+            }
+            catch (Exception ex)
+            {
+                _log.Error("Failed to open the speaker-management window", ex);
+                MessageBox.Show("Unable to open speaker management: " + ex.Message, "字幕君",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         });

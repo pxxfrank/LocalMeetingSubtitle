@@ -33,7 +33,9 @@ public sealed class SrtTranscriptFormatter : TranscriptFormatterBase
 
             builder.Append(index.ToString(CultureInfo.InvariantCulture)).Append('\n');
             builder.Append(FormatTimestamp(start)).Append(" --> ").Append(FormatTimestamp(end)).Append('\n');
-            builder.Append(segment.DisplayText).Append('\n');
+            builder.Append(string.IsNullOrEmpty(segment.SpeakerName)
+                ? segment.DisplayText
+                : segment.SpeakerName + ": " + segment.DisplayText).Append('\n');
             builder.Append('\n');
             index++;
         }

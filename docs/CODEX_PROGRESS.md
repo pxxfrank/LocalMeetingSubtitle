@@ -490,3 +490,23 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
 - **V0.4.2**（发言人重命名 / 合并 / 单条重分配 / 分角色过滤与导出）与 **V0.4.3**（双路采集、准实时）**尚未开始**。
 - 会后**录音采集侧**尚未接入（当前仅支持**导入**本地音频文件）；临时音频生命周期管理表已就位但未接线。
 - 无目标硬件 → 实时+会后并发的真实性能对比、3 小时 soak 仍未执行。
+
+## Update — 发言人管理与分角色导出 V0.4.2 (2026-10-09)
+
+在 V0.4.1 基础上补齐**角色校正与分角色输出**（`SD-07..SD-11`）：
+
+- **发言人管理窗口**（`SpeakerManagementWindow.xaml` + `ViewModels/SpeakerManagementViewModel.cs`，Claude 主题，独立窗口）：
+  - **重命名**：编辑名称 → `UpsertSpeakerAsync`，主窗口标签即时同步。
+  - **合并 + 撤销**：选择目标合并（`MergeSpeakersAsync` 返回受影响字幕 id）→ **一层撤销**（把受影响字幕还原到原发言人、并复原 `IsMerged`/`MergedIntoSpeakerId`）。
+  - **单条重分配**：逐条下拉选择发言人 → 应用（`SetAssignmentSpeakerAsync(..., Manual)`），人工结果不被重分析覆盖。
+  - 统计：每位发言人的**字幕条数**（精确）与**发言时长**——后者由分离区间与已归属字幕的重叠估算，UI 标注“≈”，因“原始区间 → 发言人”映射未持久化（已在代码中说明）。
+- **分角色过滤**：主窗口新增发言人筛选（全部 / 各发言人）；`SubtitleLineViewModel.IsSpeakerVisible` 控制行可见性。
+- **分角色导出**：`ExportFormat.Csv` 新增；`CsvTranscriptFormatter`（`index,start,end,speaker,text`，RFC4180 转义）；TXT/SRT 前缀发言人；Markdown 增加「参与发言人」与「按发言人整理」分节。**无发言人信息时输出与旧版逐字节一致**（向后兼容）。
+- 新增单测 `SpeakerAwareExportTests`（CSV 表头/引号转义、TXT/SRT 前缀、Markdown 分节、无发言人时不变）。
+
+### 测试
+- 单元 **136 → 143**；集成 **12**；性能 3 通过 + 1 跳过。构建 0 警告 / 0 错误。
+
+### 未完成
+- **V0.4.3**（双路采集、准实时）尚未开始；会后**录音采集侧**仍未接线；0.4.x 发布产物未重建。
+- SD-07/08/09/11 的 UI **未人工交互验证**（存储层与格式层有单测）。

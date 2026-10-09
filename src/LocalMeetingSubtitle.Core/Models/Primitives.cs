@@ -63,5 +63,6 @@ public enum ExportFormat
 {
     Txt,
     Srt,
-    Markdown
+    Markdown,
+    Csv
 }

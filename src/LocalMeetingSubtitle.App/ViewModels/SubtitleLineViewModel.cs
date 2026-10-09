@@ -13,6 +13,7 @@ public sealed class SubtitleLineViewModel : ObservableObject
     private string? _speakerLabel;
     private bool _needsSpeakerConfirmation;
     private SolidColorBrush? _speakerBrush;
+    private bool _isSpeakerVisible = true;
 
     public SubtitleLineViewModel(int sequenceNumber, TimeSpan startOffset, string text, bool isFinal)
     {
@@ -89,6 +90,16 @@ public sealed class SubtitleLineViewModel : ObservableObject
     {
         get => _speakerBrush;
         private set => SetProperty(ref _speakerBrush, value);
+    }
+
+    /// <summary>
+    /// True when this row passes the active by-speaker filter. Defaults to visible so the filter
+    /// is a no-op until a specific speaker is selected.
+    /// </summary>
+    public bool IsSpeakerVisible
+    {
+        get => _isSpeakerVisible;
+        set => SetProperty(ref _isSpeakerVisible, value);
     }
 
     /// <summary>Applies (or clears) the speaker tag for this row.</summary>

@@ -26,8 +26,13 @@ public sealed class TxtTranscriptFormatter : TranscriptFormatterBase
 
         foreach (var segment in Ordered(segments))
         {
-            builder.Append('[').Append(FormatClock(segment.StartOffset)).Append("] ")
-                .Append(segment.DisplayText).Append('\n');
+            builder.Append('[').Append(FormatClock(segment.StartOffset)).Append("] ");
+            if (!string.IsNullOrEmpty(segment.SpeakerName))
+            {
+                builder.Append(segment.SpeakerName).Append(": ");
+            }
+
+            builder.Append(segment.DisplayText).Append('\n');
         }
 
         return builder.ToString();

@@ -26,6 +26,12 @@ public sealed class SubtitleSegment
     public bool IsEdited { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 
+    /// <summary>
+    /// Speaker display name for this line. Populated only for speaker-aware export (never read from or
+    /// written to the database — the repositories use explicit column lists).
+    /// </summary>
+    public string? SpeakerName { get; set; }
+
     /// <summary>Text shown to the user: the corrected text, unless the user edited it.</summary>
     public string DisplayText => IsEdited ? CorrectedText : (string.IsNullOrEmpty(CorrectedText) ? OriginalText : CorrectedText);
 }

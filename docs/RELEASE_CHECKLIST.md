@@ -57,11 +57,11 @@ Legend: `PASS` = verified with evidence · `PARTIAL` = some sub-checks pass, oth
 | SD-04 | 可手动指定发言人数 | `SpeakerCountMode.Manual` → `FastClusteringConfig.NumClusters` | 生效 | 链路已实现（`DiarizationRequest.ManualSpeakerCount` + 设置项 `DiarizationSpeakerCount`）；**尚无独立 UI 控件**，未在真实音频上对比 | 代码/设置 | 开发主机 | **PARTIAL** |
 | SD-05 | 字幕与说话人时间对齐 | `SpeakerAlignmentService` + 集成测试 | 逐句归属 | 2 条字幕 → 分属 2 个不同发言人 | 集成测试输出 | 开发主机 | **PASS** |
 | SD-06 | 未知或歧义发言人可被标记 | 单元测试 | 未知=空、歧义=待确认 | 无重叠→`null`；近似均分→`NeedsConfirmation=true`；精确平局→未知+待确认 | `SpeakerAlignmentServiceTests` | 开发主机 | **PASS** |
-| SD-07 | 可修改发言人名称 | UI（V0.4.2） | 重命名并同步 | 仓储支持（`DisplayName` + `UpsertSpeakerAsync`）；**无 UI** | — | — | **NOT_TESTED** |
-| SD-08 | 可合并错误拆分的发言人 | UI（V0.4.2） | 合并 + 撤销 | `MergeSpeakersAsync` 已实现并有单测（重指向 + 受影响 id + 标记 merged）；**无 UI** | `SqliteSpeakerRepositoryTests` | 开发主机 | **NOT_TESTED（底层已 PASS）** |
-| SD-09 | 可修改单条字幕的发言归属 | UI（V0.4.2） | 手动改派并持久化 | `SetAssignmentSpeakerAsync` + 单测（人工行不被重分析覆盖）；**无 UI** | `SqliteSpeakerRepositoryTests` | 开发主机 | **NOT_TESTED（底层已 PASS）** |
+| SD-07 | 可修改发言人名称 | 发言人管理窗口重命名 → `UpsertSpeakerAsync` | 重命名并同步 | **UI 已实现**（发言人管理窗口；保存后主窗口标签同步）；仓储层有单测；**未人工交互验证** | `SpeakerManagementViewModel` | 开发主机 | **PARTIAL** |
+| SD-08 | 可合并错误拆分的发言人 | 发言人管理窗口合并 + 撤销 | 合并 + 撤销 | **UI 已实现**（选择目标合并 + 一层撤销：还原受影响字幕归属与源发言人状态）；`MergeSpeakersAsync` 有单测；**未人工交互验证** | `SpeakerManagementViewModel` / `SqliteSpeakerRepositoryTests` | 开发主机 | **PARTIAL** |
+| SD-09 | 可修改单条字幕的发言归属 | 发言人管理窗口逐条改派 + 应用 | 手动改派并持久化 | **UI 已实现**（逐条下拉选择 → 应用；`Source=Manual` 不被重分析覆盖）；有单测；**未人工交互验证** | `SpeakerManagementViewModel` / `SqliteSpeakerRepositoryTests` | 开发主机 | **PARTIAL** |
 | SD-10 | 人工修改能够持久保存 | 单元测试 | 重分析不覆盖人工 | `Source=Manual` 行在 `overwriteManual:false` 下保持不变 | `SqliteSpeakerRepositoryTests` | 开发主机 | **PASS** |
-| SD-11 | 按角色导出正确 | 导出（V0.4.2） | 分角色 TXT/MD/CSV/SRT | 未实现 | — | — | **NOT_TESTED** |
+| SD-11 | 按角色导出正确 | 导出对话框 CSV / 分角色输出 | 分角色 TXT/MD/CSV/SRT | 已实现：CSV（`index,start,end,speaker,text`）+ TXT/SRT 前缀发言人 + Markdown「按发言人整理」分节；格式层有单测；**UI 导出未人工交互验证** | `SpeakerAwareExportTests` | 开发主机 | **PARTIAL（格式层 PASS）** |
 | SD-12 | 原有会议历史正常打开 | 迁移 4 + 既有仓储测试 | 旧库可读 | 迁移为 `CREATE TABLE IF NOT EXISTS`，`segments` 未被改动；v3 库升级后既有查询不变 | `SqliteDatabaseTests` | 开发主机 | **PASS** |
 | SD-13 | 无网络可完成分角色分析 | 断网/离线校验 | 无需网络 | 模型仅经 `ModelDownloads`（隔离）下载；分析在本机真实模型上完成，运行期无 `System.Net.Http` | 集成测试 + `OfflineVerification` | 开发主机 | **PASS** |
 | SD-14 | 不影响正常会议播放 | 实机播放验证 | 无异常 | 未执行（无目标硬件/真实会议） | — | 目标硬件 | **NOT_TESTED** |
@@ -72,8 +72,9 @@ Legend: `PASS` = verified with evidence · `PARTIAL` = some sub-checks pass, oth
 
 ### SD summary
 
-- **本版本交付 V0.4.1**（导入 → 离线分离 → 对齐 → 匿名编号 → 字幕板标签），SD-01/02/03/05/06/10/12/13/18 在开发主机 **PASS**。
-- SD-07/08/09/11 属 **V0.4.2**（角色校正与分角色导出），**尚未实现**（其中 08/09 的存储层已实现并有单测）。
+- **V0.4.1**（导入 → 离线分离 → 对齐 → 匿名编号 → 字幕板标签）：SD-01/02/03/05/06/10/12/13/18 在开发主机 **PASS**。
+- **V0.4.2**（发言人管理 + 分角色过滤/导出）本版本已实现：SD-07/08/09 为 **PARTIAL**（UI 已实现、存储层有单测，但**未人工交互验证**）；SD-11 格式层 **PASS**、UI 未交互验证。
 - SD-14/15 需**目标硬件/真实会议**并发验证，标记 **NOT_TESTED**（设计上的性能隔离已就位）。
 - SD-04/16/17 为 **PARTIAL**（链路已就位，缺 UI 或端到端演示）。
+- **V0.4.3**（双路采集、准实时）尚未开始。
 - 因此 **V0.4 整体为 Release Candidate**，不得宣称已通过实机验收。
