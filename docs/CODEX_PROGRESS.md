@@ -243,3 +243,24 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
   single locked file cannot abort it, and deletes the legacy folder once it is empty. Covered by four unit
   tests (`LocalDataPathsMigrationTests`); unit suite now 116 tests.
 - Version bumped to **0.3.2**; MSI + Burn bundle + portable ZIP rebuilt and re-signed.
+
+## Update — "Recognition error" NullReferenceException hardening (v0.3.3) (2026-10-09)
+
+- **Reported:** recognition occasionally fails with `Recognition error: Object reference not set to an
+  instance of an object` (the message produced by the decode catch in `TranscriptionPipeline`).
+- **Could not reproduce** on the dev host: real WASAPI loopback + the real zh-14M model transcribes
+  correctly, with and without model-level hotwords (`modified_beam_search`), and the new
+  `RealPipelineTests` (real engine through the real pipeline, no scripting) passes.
+- **Root cause found by review — use-after-dispose of the ASR session:**
+  1. `StopAsync` waits at most 5 s for the ASR loop; `DisposeAsync` then freed `_asrSession` (and the
+     native `OnlineStream` handle) even if the loop was still decoding with it. Decoding a freed native
+     stream throws `NullReferenceException`, which the decode catch reports as a "Recognition error".
+     `DisposeAsync` now cancels the token and awaits the ASR task before disposing the session.
+  2. `SwapEngine` (engine hot-swap when hotwords are applied) disposed the old engine and session
+     *before* creating the new session, so a failure left a disposed session in use. It now creates the
+     replacement session first and only then tears the old one down.
+- **Diagnostics:** `FileLogger` now appends the exception `StackTrace` to error entries. Previously only
+  the type and message were written, which made a NullReferenceException here undiagnosable from the log.
+- **New coverage:** `RealPipelineTests` — the first tests that drive the real engine through the real
+  pipeline (plain decode + model-level hotwords). Integration suite 8 → 10.
+- Version bumped to **0.3.3**; MSI + Burn bundle + portable ZIP rebuilt and re-signed.

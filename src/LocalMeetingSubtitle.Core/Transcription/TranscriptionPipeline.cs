@@ -380,11 +380,25 @@ public sealed class TranscriptionPipeline : IAsyncDisposable
         {
             _log.Info("Hot-swapping ASR engine; flushing current utterance first.");
             Flush();
-            _asrSession?.Dispose();
-            _engine.Dispose();
+
+            // Build the replacement session before tearing the current one down: if CreateSession
+            // throws, the running engine/session stay intact instead of leaving the loop decoding
+            // with an already-disposed session (which throws a NullReferenceException).
+            var newSession = newEngine.CreateSession();
+            var newSegmenter = newEngine.Capabilities.Streaming
+                ? null
+                : new AudioSegmenter(_preprocessor.TargetFormat.SampleRate);
+
+            var oldSession = _asrSession;
+            var oldEngine = _engine;
+
             _engine = newEngine;
-            _asrSession = _engine.CreateSession();
-            _segmenter = _engine.Capabilities.Streaming ? null : new AudioSegmenter(_preprocessor.TargetFormat.SampleRate);
+            _asrSession = newSession;
+            _segmenter = newSegmenter;
+
+            oldSession?.Dispose();
+            oldEngine.Dispose();
+
             StatusChanged?.Invoke(this, Status with { HotwordDetail = "Model rebuilt with new hotwords." });
         }
         catch (Exception ex)
@@ -475,6 +489,24 @@ public sealed class TranscriptionPipeline : IAsyncDisposable
             if (_running) await StopAsync().ConfigureAwait(false);
         }
         catch { /* best effort */ }
+
+        // StopAsync waits at most 5 s for the ASR loop; if it overshot, the loop is still decoding
+        // with _asrSession. Let it finish (bounded, since the token is cancelled) before the session
+        // and the native stream handle behind it are freed — otherwise the loop throws a
+        // NullReferenceException on the freed handle, which surfaces as a "Recognition error".
+        if (_asrTask is { } asrTask)
+        {
+            _cts?.Cancel();
+            try
+            {
+                await asrTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                _log.Warn($"ASR loop ended with an error during dispose: {ex.Message}");
+            }
+        }
 
         _capture.FramesAvailable -= OnFramesAvailable;
         _capture.Error -= OnCaptureError;

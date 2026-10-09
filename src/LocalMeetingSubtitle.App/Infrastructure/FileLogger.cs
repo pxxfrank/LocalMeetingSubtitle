@@ -6,8 +6,9 @@ namespace LocalMeetingSubtitle.App.Infrastructure;
 
 /// <summary>
 /// Simple file + in-memory logger. Writes one line per entry to a per-day log file under the
-/// logs directory and keeps a bounded in-memory tail so the UI (or a crash report) can show the
-/// most recent activity. Logging never throws — an app that cannot log must still run.
+/// logs directory (errors append their stack trace) and keeps a bounded in-memory tail so the UI
+/// (or a crash report) can show the most recent activity. Logging never throws — an app that
+/// cannot log must still run.
 /// </summary>
 public sealed class FileLogger : IAppLogger
 {
@@ -63,6 +64,13 @@ public sealed class FileLogger : IAppLogger
         if (exception is not null)
         {
             line.Append(" | ").Append(exception.GetType().Name).Append(": ").Append(exception.Message);
+
+            // Without the stack a NullReferenceException here is undiagnosable from the log alone.
+            var stack = exception.StackTrace;
+            if (!string.IsNullOrWhiteSpace(stack))
+            {
+                line.Append(Environment.NewLine).Append(stack.Trim());
+            }
         }
 
         var text = line.ToString();
