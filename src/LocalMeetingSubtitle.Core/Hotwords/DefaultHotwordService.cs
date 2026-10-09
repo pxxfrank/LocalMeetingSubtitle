@@ -16,6 +16,9 @@ public sealed class DefaultHotwordService : IHotwordService
 
     private IReadOnlyList<Hotword> _hotwords = Array.Empty<Hotword>();
     private IReadOnlyList<TextCorrectionRule> _rules = Array.Empty<TextCorrectionRule>();
+    private IReadOnlyList<Hotword>? _activeHotwordsCache;
+    private IReadOnlyList<TextCorrectionRule>? _activeRulesCache;
+    private bool _useBuiltInLexicon = true;
 
     private bool _engineSupportsModelHotwords;
     private bool _engineCapabilityKnown;
@@ -27,9 +30,65 @@ public sealed class DefaultHotwordService : IHotwordService
         _log = log ?? NullLogger.Instance;
     }
 
+    public bool UseBuiltInLexicon
+    {
+        get => _useBuiltInLexicon;
+        set
+        {
+            if (_useBuiltInLexicon == value)
+            {
+                return;
+            }
+
+            _useBuiltInLexicon = value;
+            _activeHotwordsCache = null;
+            _activeRulesCache = null;
+            _log.Info($"Built-in domain lexicon {(value ? "enabled" : "disabled")} ({BuiltInLexicon.HotwordCount} terms available).");
+        }
+    }
+
     public IReadOnlyList<Hotword> AllHotwords => _hotwords;
-    public IReadOnlyList<Hotword> ActiveHotwords => _hotwords.Where(h => h.Enabled && !string.IsNullOrWhiteSpace(h.Text)).ToList();
-    public IReadOnlyList<TextCorrectionRule> ActiveRules => _rules.Where(r => r.Enabled).ToList();
+
+    /// <summary>
+    /// The user's active hotwords, plus (unless disabled) the built-in domain lexicon. A user entry
+    /// with the same text wins, so the user's own settings are never overridden by the built-in list.
+    /// </summary>
+    public IReadOnlyList<Hotword> ActiveHotwords => _activeHotwordsCache ??= BuildActiveHotwords();
+
+    public IReadOnlyList<TextCorrectionRule> ActiveRules => _activeRulesCache ??= BuildActiveRules();
+
+    private IReadOnlyList<Hotword> BuildActiveHotwords()
+    {
+        var user = _hotwords.Where(h => h.Enabled && !string.IsNullOrWhiteSpace(h.Text)).ToList();
+        if (!UseBuiltInLexicon)
+        {
+            return user;
+        }
+
+        var builtIn = BuiltInLexicon.Hotwords
+            .Select(text => new Hotword { Text = text, Enabled = true, Score = 1.5f });
+
+        return builtIn
+            .Concat(user)
+            .GroupBy(h => h.Text, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.Last())
+            .ToList();
+    }
+
+    private IReadOnlyList<TextCorrectionRule> BuildActiveRules()
+    {
+        var user = _rules.Where(r => r.Enabled).ToList();
+        if (!UseBuiltInLexicon)
+        {
+            return user;
+        }
+
+        return BuiltInLexicon.Rules
+            .Concat(user)
+            .GroupBy(r => r.Pattern, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.Last())
+            .ToList();
+    }
 
     public HotwordMode Mode
     {
@@ -66,6 +125,8 @@ public sealed class DefaultHotwordService : IHotwordService
     {
         _hotwords = await _repository.GetHotwordsAsync(cancellationToken).ConfigureAwait(false);
         _rules = await _repository.GetCorrectionRulesAsync(cancellationToken).ConfigureAwait(false);
+        _activeHotwordsCache = null;
+        _activeRulesCache = null;
         _log.Info($"Hotwords reloaded: {_hotwords.Count} hotword(s), {_rules.Count} correction rule(s).");
     }
 

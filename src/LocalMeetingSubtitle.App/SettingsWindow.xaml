@@ -153,6 +153,13 @@
                 <!-- ===== 热词 / Hotwords ===== -->
                 <TextBlock Text="热词 / Hotwords (每行一个 / one per line)" FontWeight="SemiBold"
                            Margin="0,0,0,10" />
+                <CheckBox Content="启用华为领域专业词表 / Enable Huawei-domain lexicon"
+                          IsChecked="{Binding UseBuiltInLexicon}" />
+                <TextBlock Margin="0,6,0,10" TextWrapping="Wrap" FontSize="12"
+                           Foreground="{DynamicResource TextMuted}">
+                    <Run Text="内置" /><Run Text="{Binding LexiconTermCount, Mode=OneWay}" /><Run Text="条公开的华为领域术语（芯片/操作系统/云/网络/终端/汽车/能源/流程），与你的热词合并后参与模型加权与文本纠正；可关闭。" />
+                    <Run Text=" Built-in public Huawei-domain terms, merged with your hotwords for model boosting + text correction; can be turned off." />
+                </TextBlock>
                 <TextBox Text="{Binding HotwordsText, UpdateSourceTrigger=PropertyChanged}"
                          AcceptsReturn="True" Height="130" VerticalScrollBarVisibility="Auto"
                          TextWrapping="NoWrap" FontFamily="Consolas"

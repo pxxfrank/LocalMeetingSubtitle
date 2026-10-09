@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using LocalMeetingSubtitle.App.Infrastructure;
 using LocalMeetingSubtitle.Core.Abstractions;
+using LocalMeetingSubtitle.Core.Hotwords;
 using LocalMeetingSubtitle.Core.Models;
 
 namespace LocalMeetingSubtitle.App.ViewModels;
@@ -72,6 +73,13 @@ public sealed class SettingsViewModel : ObservableObject
     private bool _enableVadSegmenting = true;
     public bool EnableVadSegmenting { get => _enableVadSegmenting; set => SetProperty(ref _enableVadSegmenting, value); }
 
+    private bool _useBuiltInLexicon = true;
+    /// <summary>Merge the built-in Huawei-domain lexicon into hotwords + correction rules (default on).</summary>
+    public bool UseBuiltInLexicon { get => _useBuiltInLexicon; set => SetProperty(ref _useBuiltInLexicon, value); }
+
+    /// <summary>How many terms the built-in lexicon contributes (shown in the settings UI).</summary>
+    public int LexiconTermCount => BuiltInLexicon.HotwordCount;
+
     private RecordingMode _recordingMode = RecordingMode.None;
     /// <summary>Opt-in post-meeting recording mode; defaults to <see cref="RecordingMode.None"/>.</summary>
     public RecordingMode RecordingMode { get => _recordingMode; set => SetProperty(ref _recordingMode, value); }
@@ -138,6 +146,7 @@ public sealed class SettingsViewModel : ObservableObject
         AutoScrollEnabled = _settings.AutoScrollEnabled;
         ExportIncludeTimestamps = _settings.ExportIncludeTimestamps;
         EnableVadSegmenting = _settings.EnableVadSegmenting;
+        UseBuiltInLexicon = _settings.UseBuiltInLexicon;
         RecordingMode = _settings.RecordingMode;
         Theme = string.IsNullOrWhiteSpace(_settings.Theme) ? ThemeManager.Light : _settings.Theme;
 
@@ -166,6 +175,7 @@ public sealed class SettingsViewModel : ObservableObject
             _settings.AutoScrollEnabled = AutoScrollEnabled;
             _settings.ExportIncludeTimestamps = ExportIncludeTimestamps;
             _settings.EnableVadSegmenting = EnableVadSegmenting;
+            _settings.UseBuiltInLexicon = UseBuiltInLexicon;
             _settings.RecordingMode = RecordingMode;
             _settings.Theme = Theme;
 

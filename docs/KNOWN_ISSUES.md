@@ -28,6 +28,7 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 | P3-8 | Post-meeting recording capture not wired (import only) | Low | Open |
 | P3-9 | Diarization models are downloaded, not bundled in the publish | Low | Open |
 | P3-10 | Real-time + diarization concurrency not measured on target hardware | Low | Open |
+| P3-11 | Built-in lexicon: the bundled zh-14M model cannot encode several lexicon terms | Low | Open |
 | BLOCKED-1 | Full Start→transcribe→persist UI path not exercised | P0 (target) | Blocked (no real audio; model not installed in app data dir) |
 | BLOCKED-2 | No real-meeting 3-hour stability run | P0 (target) | Blocked (`ThreeHourSoak` never executed) |
 | BLOCKED-3 | Installer signature is self-signed / untrusted | P1 (release) | Partial (MSI + Setup.exe produced & signed; no CA-issued certificate) |
@@ -178,6 +179,23 @@ following limitations are known and accepted for this version.
   concurrent diarization run was **not measured** on the target hardware.
 - **Workaround:** run diarization *after* the meeting (the intended flow) rather than during live
   transcription.
+
+#### P3-11 — Built-in lexicon: the bundled zh-14M model cannot encode several lexicon terms
+
+- **Impact (verified by loading the lexicon as a hotwords file):** the bundled **Chinese-only** model's
+  vocabulary has **no entry** for some lexicon terms, so sherpa-onnx logs
+  `Failed to encode some hotwords, skip them` and simply skips them (no crash, recognition continues):
+  - pure-Latin acronyms — `Atlas`, `CANN`, `MDC`, `HCSO`, `openEuler`, `GaussDB`, `ArkTS`, `ArkUI`,
+    `ModelArts`, `MindSpore`, `IPD`, `LTC`, `ITR`, `OTN`, `eSIM`, `5G`, `5.5G`, `6G`, `Massive MIMO`;
+  - the **rare character 昇** — so `昇腾`, `昇思`, `毕昇`, `昇腾AI` cannot be boosted either.
+- **Mitigation already in place:** such terms are still handled by the **text-correction rules**
+  (e.g. `升腾 → 昇腾`, `毕升 → 毕昇`), and the acronyms will boost normally with an **English-capable**
+  model (the catalog's bilingual `streaming-zipformer-bilingual-zh-en`); the
+  `Failed to encode …` lines are native `stderr` output and are not surfaced in the app (WinExe discards stderr).
+- **Not measured:** there is **no domain test audio** on the dev host, so the lexicon's *accuracy gain*
+  is **not measured** — only its cost is (measured RTF 0.059 with 116 hotwords vs 0.071 without, i.e. no
+  regression; output on unrelated audio changes only by a different beam path).
+- **Workaround:** extend the hotword list with your own terms and/or select the bilingual model.
 
 ## Blocked / NOT_TESTED items
 

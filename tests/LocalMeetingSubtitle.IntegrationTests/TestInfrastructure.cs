@@ -79,6 +79,7 @@ internal sealed class FakeHotwordService : IHotwordService
     public IReadOnlyList<TextCorrectionRule> ActiveRules { get; set; } = Array.Empty<TextCorrectionRule>();
     public HotwordMode Mode { get; private set; } = HotwordMode.TextCorrectionOnly;
     public string? ModeDetail => null;
+    public bool UseBuiltInLexicon { get; set; }
 
     public Func<string, string> Correction { get; set; } = static s => s;
 

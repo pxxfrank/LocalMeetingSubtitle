@@ -22,6 +22,12 @@ public interface IHotwordService
     HotwordMode Mode { get; }
     string? ModeDetail { get; }
 
+    /// <summary>
+    /// When true (the default) the built-in <see cref="BuiltInLexicon"/> glossary is merged with the
+    /// user's own hotwords and correction rules; when false only the user's entries apply.
+    /// </summary>
+    bool UseBuiltInLexicon { get; set; }
+
     /// <summary>Called by the pipeline once the engine capability is known.</summary>
     void SetEngineCapability(bool supportsModelHotwords, bool modelCanBeRebuiltWithoutDataLoss);
 

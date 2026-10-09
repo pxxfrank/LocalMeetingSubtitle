@@ -1398,6 +1398,10 @@ public sealed class MainViewModel : ObservableObject
         MinimizeToTrayOnClose = settings.MinimizeToTrayOnClose;
         AutoScrollEnabled = settings.AutoScrollEnabled;
 
+        // The built-in lexicon is applied through the hotword service (effective on the next
+        // engine build; ReapplyHotwordsAsync applies it immediately while transcribing).
+        _hotwordService.UseBuiltInLexicon = settings.UseBuiltInLexicon;
+
         var theme = string.IsNullOrWhiteSpace(settings.Theme) ? ThemeManager.Light : settings.Theme;
         if (!string.Equals(theme, ThemeManager.Current, StringComparison.OrdinalIgnoreCase))
         {

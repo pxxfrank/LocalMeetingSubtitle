@@ -60,6 +60,7 @@ internal sealed class FakeHotwordService : IHotwordService
     public IReadOnlyList<TextCorrectionRule> ActiveRules => Array.Empty<TextCorrectionRule>();
     public HotwordMode Mode => HotwordMode.TextCorrectionOnly;
     public string? ModeDetail => null;
+    public bool UseBuiltInLexicon { get; set; }
 
     public void SetEngineCapability(bool supportsModelHotwords, bool modelCanBeRebuiltWithoutDataLoss) { }
     public Task ReloadAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;

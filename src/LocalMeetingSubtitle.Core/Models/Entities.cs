@@ -100,6 +100,9 @@ public sealed class AppSettings
     /// recorded and nothing is ever persisted unless the user explicitly chooses otherwise in settings.
     /// </summary>
     public RecordingMode RecordingMode { get; set; } = RecordingMode.None;
+
+    /// <summary>Merge the built-in Huawei-domain lexicon into the hotwords/correction rules (default on).</summary>
+    public bool UseBuiltInLexicon { get; set; } = true;
 }
 
 public sealed class PerformanceMetric
