@@ -89,7 +89,7 @@ public sealed class SherpaOnnxAsrEngine : IAsrEngine
     public IAsrSession CreateSession()
     {
         if (!IsInitialized) throw new InvalidOperationException("Engine is not initialized.");
-        return _offline != null ? new OfflineSession(_offline) : new OnlineSession(_online!);
+        return _offline != null ? new OfflineSession(_offline) : new OnlineSession(_online!, _log);
     }
 
     public void Dispose()
@@ -177,11 +177,14 @@ public sealed class SherpaOnnxAsrEngine : IAsrEngine
     private sealed class OnlineSession : IAsrSession
     {
         private readonly OnlineRecognizer _recognizer;
+        private readonly IAppLogger _log;
         private readonly OnlineStream _stream;
+        private bool _emptyResultWarned;
 
-        public OnlineSession(OnlineRecognizer recognizer)
+        public OnlineSession(OnlineRecognizer recognizer, IAppLogger log)
         {
             _recognizer = recognizer;
+            _log = log;
             _stream = recognizer.CreateStream();
         }
 
@@ -193,9 +196,37 @@ public sealed class SherpaOnnxAsrEngine : IAsrEngine
 
         public AsrDecodeResult GetResult()
         {
-            var result = _recognizer.GetResult(_stream);
-            bool endpoint = _recognizer.IsEndpoint(_stream);
-            return new AsrDecodeResult(result.Text ?? "", endpoint, result.Tokens, result.Timestamps);
+            try
+            {
+                var result = _recognizer.GetResult(_stream);
+                bool endpoint = _recognizer.IsEndpoint(_stream);
+                return new AsrDecodeResult(result.Text ?? "", endpoint, result.Tokens, result.Timestamps);
+            }
+            catch (NullReferenceException)
+            {
+                // sherpa-onnx's C# wrapper throws from OnlineRecognizerResult(IntPtr) when the native
+                // call yields no result for the stream. That has been observed with live capture and
+                // never with offline audio. There is simply no hypothesis for this chunk, so report an
+                // empty one rather than tearing down recognition with a NullReferenceException.
+                if (!_emptyResultWarned)
+                {
+                    _emptyResultWarned = true;
+                    _log.Warn($"sherpa-onnx GetResult returned no result (IsReady={SafeIsReady()}); "
+                              + "treating the chunk as empty and continuing.");
+                }
+                else
+                {
+                    _log.Debug("sherpa-onnx GetResult returned no result again; treated as empty.");
+                }
+
+                return new AsrDecodeResult("", false);
+            }
+        }
+
+        private bool SafeIsReady()
+        {
+            try { return _recognizer.IsReady(_stream); }
+            catch { return false; }
         }
 
         public void Reset() => _recognizer.Reset(_stream);

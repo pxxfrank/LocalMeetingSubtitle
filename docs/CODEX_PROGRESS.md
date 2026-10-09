@@ -264,3 +264,34 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
 - **New coverage:** `RealPipelineTests` — the first tests that drive the real engine through the real
   pipeline (plain decode + model-level hotwords). Integration suite 8 → 10.
 - Version bumped to **0.3.3**; MSI + Burn bundle + portable ZIP rebuilt and re-signed.
+
+## Update — real stack for the "Recognition error" NRE; guard at the sherpa-onnx boundary (v0.3.4) (2026-10-09)
+
+- **The v0.3.3 teardown fixes were not the trigger.** The failure was finally reproduced in a live
+  session (Start + real WASAPI loopback), giving the actual stack:
+
+  ```
+  NullReferenceException
+    at SherpaOnnx.OnlineRecognizerResult..ctor(IntPtr handle)
+    at SherpaOnnx.OnlineRecognizer.GetResult(OnlineStream stream)
+    at LocalMeetingSubtitle.Asr.SherpaOnnxAsrEngine.OnlineSession.GetResult()   (SherpaOnnxAsrEngine.cs:196)
+    at ...TranscriptionPipeline.DecodeStreaming(...)
+    at ...TranscriptionPipeline.AsrLoopAsync(...)
+  ```
+
+  So the exception is thrown **inside the sherpa-onnx C# wrapper**: `OnlineRecognizer.GetResult`
+  occasionally yields no native result, and `OnlineRecognizerResult(IntPtr)` dereferences it. It is not
+  in our decode logic and not a use-after-dispose (the v0.3.3 fixes remain useful but were not the cause).
+- **Fix:** `OnlineSession.GetResult()` now treats "the library returned no result" as *no hypothesis for
+  this chunk* (empty result) and continues, instead of letting the exception tear down recognition. The
+  first occurrence logs a WARN with the `IsReady` state; later ones drop to DEBUG.
+- **Instrumentation:** the decode-failure log now includes `chunk=<length>` and `nonFinite=<count>`, to
+  tell whether bad (NaN/Inf) audio data is involved.
+- **Not deterministically reproducible:** many live runs decode correctly (plain and with
+  `modified_beam_search`); the failure is intermittent, so the fix is a defensive guard at the library
+  boundary rather than a proven root-cause removal. If it recurs, the log now carries the full stack
+  plus the new diagnostic fields.
+- Probes written while investigating (`GetResult` with no audio, tiny chunks, 44.1 kHz stereo through the
+  real preprocessor, post-`Reset` reads, empty `AcceptWaveform`, speech+silence endpointing) all pass and
+  were removed.
+- Version bumped to **0.3.4**; MSI + Burn bundle + portable ZIP rebuilt and re-signed.

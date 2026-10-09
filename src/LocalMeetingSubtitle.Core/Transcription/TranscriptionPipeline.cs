@@ -282,7 +282,7 @@ public sealed class TranscriptionPipeline : IAsyncDisposable
             }
             catch (Exception ex)
             {
-                _log.Error("ASR decode failed", ex);
+                _log.Error($"ASR decode failed (chunk={chunk.Length}, nonFinite={CountNonFinite(chunk)})", ex);
                 ErrorOccurred?.Invoke(this, $"Recognition error: {ex.Message}");
             }
         }
@@ -438,6 +438,20 @@ public sealed class TranscriptionPipeline : IAsyncDisposable
             }
         }
         catch (OperationCanceledException) { }
+    }
+
+    private static int CountNonFinite(float[] values)
+    {
+        int count = 0;
+        foreach (var value in values)
+        {
+            if (float.IsNaN(value) || float.IsInfinity(value))
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     private void ReportOverload()
