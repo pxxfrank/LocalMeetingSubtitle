@@ -128,7 +128,7 @@ public sealed class SherpaOnnxAsrEngine : IAsrEngine
         config.ModelConfig.Transducer.Decoder = Path.Combine(o.ModelDirectory, o.DecoderFileName);
         config.ModelConfig.Transducer.Joiner = Path.Combine(o.ModelDirectory, o.JoinerFileName);
         config.ModelConfig.Tokens = Path.Combine(o.ModelDirectory, o.TokensFileName);
-        config.ModelConfig.NumThreads = o.NumThreads > 0 ? o.NumThreads : Math.Max(1, Environment.ProcessorCount / 2);
+        config.ModelConfig.NumThreads = AsrThreadPolicy.Resolve(o.NumThreads);
         config.ModelConfig.Provider = o.Provider;
         // ModelType left empty so sherpa-onnx auto-detects (setting an invalid literal logs a warning).
 
@@ -160,7 +160,7 @@ public sealed class SherpaOnnxAsrEngine : IAsrEngine
         config.ModelConfig.SenseVoice.Language = o.Language;
         config.ModelConfig.SenseVoice.UseInverseTextNormalization = o.UseInverseTextNormalization ? 1 : 0;
         config.ModelConfig.Tokens = Path.Combine(o.ModelDirectory, o.TokensFileName);
-        config.ModelConfig.NumThreads = o.NumThreads > 0 ? o.NumThreads : Math.Max(1, Environment.ProcessorCount / 2);
+        config.ModelConfig.NumThreads = AsrThreadPolicy.Resolve(o.NumThreads);
         config.ModelConfig.Provider = o.Provider;
         config.ModelConfig.ModelType = "sense_voice";
         config.DecodingMethod = "greedy_search";

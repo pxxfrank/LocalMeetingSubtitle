@@ -76,6 +76,24 @@ public sealed class AsrEngineOptions
     public bool IsOffline => Kind == AsrModelKind.Offline;
 }
 
+/// <summary>
+/// Policy for the recognizer's CPU thread count.
+///
+/// sherpa-onnx defaults to <c>ProcessorCount/2</c>, which on a many-core machine spends far more
+/// CPU than a small streaming model needs — measured on a 64-logical-CPU host the RTF was ~2x
+/// <em>worse</em> at 32 threads (0.100) than at 4 (0.048), with identical output. Capping the
+/// automatic count also leaves the UI responsive while transcribing.
+/// </summary>
+public static class AsrThreadPolicy
+{
+    /// <summary>Upper bound applied when the user has not chosen a thread count.</summary>
+    public const int MaxAutoThreads = 4;
+
+    /// <summary>Uses <paramref name="configured"/> when positive, otherwise half the cores capped.</summary>
+    public static int Resolve(int configured) =>
+        configured > 0 ? configured : Math.Clamp(Environment.ProcessorCount / 2, 1, MaxAutoThreads);
+}
+
 public sealed class AsrCapabilities
 {
     public bool Streaming { get; init; }

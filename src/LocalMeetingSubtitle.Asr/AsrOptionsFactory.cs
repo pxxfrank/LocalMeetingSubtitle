@@ -24,7 +24,7 @@ public static class AsrOptionsFactory
             JoinerFileName = descriptor.JoinerFile,
             TokensFileName = descriptor.TokensFile,
             ModelFileName = descriptor.ModelFile,
-            NumThreads = numThreads,
+            NumThreads = AsrThreadPolicy.Resolve(numThreads),
             Provider = "cpu",
             HotwordsFile = hotwordsFile,
             HotwordsScore = hotwordsScore

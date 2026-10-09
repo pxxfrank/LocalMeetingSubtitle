@@ -533,3 +533,34 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
 ### 测试
 - 单元 **143 → 145**；集成 12；性能 3 通过 + 1 跳过；构建 0 错误。
 - **SD-17 更新为 PASS**（开发主机：写入/清理有单测；录音 UI 未人工交互验证）。
+
+## Update — 转写卡顿：ASR 线程数上限 (2026-10-09)
+
+**问题（用户报告）：** 一旦开始转写系统即卡顿。
+
+**根因（本次实测确认）：** `SherpaOnnxAsrEngine` 在未指定线程数时沿用 sherpa-onnx 的 `ProcessorCount/2`——
+开发主机（64 逻辑核）因此开 **32 个推理线程**。对 14M 小模型而言，线程数远超所需，**既拖慢识别又长期占用大量 CPU**。
+
+**实测（`tools/AsrBenchmark`，同一音频、同一模型）：**
+
+| 线程 | RTF | 文本 |
+| --- | --- | --- |
+| 2 | 0.0524 | 对我做了介绍那么我想说的是大家如果对我的研究感兴趣呢 |
+| **4** | **0.0481** | 同上 |
+| 8 | 0.0639 | 同上 |
+| 32（旧默认） | **0.0999** | 同上 |
+
+即：**4 线程比 32 线程快约 2 倍**（文本逐字一致），同时把 28 个核留给界面。
+
+**修复：** 新增 `Core/Models/AsrModels.cs` → `AsrThreadPolicy`（`MaxAutoThreads = 4`；`Resolve(configured)` =
+显式值优先，否则 `clamp(ProcessorCount/2, 1, 4)`）。`AsrOptionsFactory.FromDescriptor` 与
+`SherpaOnnxAsrEngine`（在线 + 离线两处）统一走该策略。用户仍可在设置里显式指定更多线程。
+
+**修复后默认（4 线程）实测 RTF = 0.0396**（较旧默认 0.0999 改善约 2.5×）。
+
+> 诚实说明：这只消除了「识别自身占用过多 CPU」这一确定因素；**未在用户机器上复现**，若卡顿另有来源
+> （如性能计数器采样或界面刷新频率），仍需在目标机进一步定位。
+
+### 测试
+- 单元 **145 → 148**（`AsrThreadPolicyTests`：显式值透传、自动值下限/上限、大核数不超上限）。
+- 集成 12；性能 3 + 1 跳过；构建 0 错误。
