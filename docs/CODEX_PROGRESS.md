@@ -342,3 +342,25 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
   and the `XamlParseException` count is **0**. The captured video audio decodes to Chinese with the real
   model (RTF ≈ 0.096) via `AsrBenchmark`.
 - Version bumped to **0.3.6**; MSI + Burn bundle + portable ZIP rebuilt and re-signed.
+
+## Update — in-app self-diagnosis in the footer (v0.3.7) (2026-10-09)
+
+- **Motivation:** "sound plays but nothing is transcribed" was only diagnosable from the log. On a
+  second machine the user had no way to tell whether capture, the recognizer, or the model was at fault.
+- **Added** a live diagnostic chip in the footer (next to the level meter), shown in red when it reports
+  a problem:
+  - `就绪（未开始）/ ready`
+  - `未采集到声音 — 请检查播放设备 / no audio captured` (frames stopped arriving — usually the wrong
+    playback device; only the Windows default render endpoint is captured via WASAPI loopback)
+  - `已采集 N.Ns 音频，识别器未就绪 / N.Ns captured, not ready yet` (audio flowing, no decode yet)
+  - `识别中 / recognizing`
+  - `模型未安装` / `未配置模型` / `原生库缺失`
+- **Implementation:** `TranscriptionPipeline.GetDiagnostics()` returns a `PipelineDiagnostics` snapshot
+  (`FramesReceived`, `SamplesAccepted`, `Decodes`, `SecondsSinceLastFrame`, `QueueSamples`); counters use
+  `Interlocked` because the capture thread and the ASR thread both update them. `MainViewModel` refreshes
+  the text once a second via a `DispatcherTimer` started in `InitializeAsync`. Only one small text row was
+  added to the footer; no other layout changed.
+- **Verified live:** with nothing playing it correctly reports "no audio captured" in red; before Start it
+  shows "ready"; while transcribing it shows "recognizing".
+- Unit **116** + integration **10** pass.
+- Version bumped to **0.3.7**; MSI + Burn bundle + portable ZIP rebuilt and re-signed.

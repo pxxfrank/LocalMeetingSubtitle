@@ -13,6 +13,18 @@ public sealed class PipelineOverloadEventArgs : EventArgs
     public string Message { get; init; } = "";
 }
 
+/// <summary>
+/// Snapshot used by the UI to show <i>where</i> transcription is stuck: audio arriving from the
+/// capture service versus the recognizer actually decoding it.
+/// </summary>
+public readonly record struct PipelineDiagnostics(
+    bool Running,
+    long FramesReceived,
+    long SamplesAccepted,
+    long Decodes,
+    double SecondsSinceLastFrame,
+    int QueueSamples);
+
 public sealed class PipelineOptions
 {
     /// <summary>Max audio buffered between capture and ASR (seconds). Bounds memory and latency.</summary>
@@ -56,6 +68,9 @@ public sealed class TranscriptionPipeline : IAsyncDisposable
     private volatile bool _running;
     private long _cumulativeSamples;
     private long _lastOverloadLogTicks;
+    private long _framesReceived;
+    private long _lastFrameTicks;
+    private long _decodes;
     private double _lastInferenceMs;
     private readonly object _swapGate = new();
     private IAsrEngine? _pendingSwap;
@@ -95,6 +110,26 @@ public sealed class TranscriptionPipeline : IAsyncDisposable
     public event EventHandler<PipelineOverloadEventArgs>? Overload;
     public event EventHandler<string>? ErrorOccurred;
 
+    /// <summary>
+    /// Point-in-time snapshot for the UI so it can say why nothing is appearing: no audio reaching
+    /// the pipeline, audio arriving but the recognizer never decoding, or everything healthy.
+    /// </summary>
+    public PipelineDiagnostics GetDiagnostics()
+    {
+        long lastFrameTicks = Interlocked.Read(ref _lastFrameTicks);
+        double secondsSinceLastFrame = lastFrameTicks == 0
+            ? double.PositiveInfinity
+            : (Environment.TickCount64 - lastFrameTicks) / 1000.0;
+
+        return new PipelineDiagnostics(
+            _running,
+            Interlocked.Read(ref _framesReceived),
+            Interlocked.Read(ref _cumulativeSamples),
+            Interlocked.Read(ref _decodes),
+            secondsSinceLastFrame,
+            _queue.Count);
+    }
+
     public async Task StartAsync(string deviceId, MeetingSession session, CancellationToken cancellationToken = default)
     {
         if (_running) throw new InvalidOperationException("Pipeline already running.");
@@ -103,6 +138,9 @@ public sealed class TranscriptionPipeline : IAsyncDisposable
         _accumulator = new SubtitleAccumulator(_hotwords.ApplyCorrections);
         _queue = new BoundedAudioQueue((long)(_options.QueueCapacitySeconds * _preprocessor.TargetFormat.SampleRate));
         _cumulativeSamples = 0;
+        Interlocked.Exchange(ref _framesReceived, 0);
+        Interlocked.Exchange(ref _lastFrameTicks, 0);
+        Interlocked.Exchange(ref _decodes, 0);
         _cts = new CancellationTokenSource();
         _writeChannel = Channel.CreateUnbounded<SubtitleSegment>(new UnboundedChannelOptions { SingleReader = true });
 
@@ -208,6 +246,9 @@ public sealed class TranscriptionPipeline : IAsyncDisposable
     {
         if (!_feedingEnabled || !_running) return;
 
+        Interlocked.Increment(ref _framesReceived);
+        Interlocked.Exchange(ref _lastFrameTicks, Environment.TickCount64);
+
         try
         {
             var mono = _preprocessor.Process(e.Samples, e.Format);
@@ -295,6 +336,7 @@ public sealed class TranscriptionPipeline : IAsyncDisposable
         while (session.IsReady())
         {
             session.Decode();
+            Interlocked.Increment(ref _decodes);
         }
 
         var result = session.GetResult();
@@ -322,7 +364,11 @@ public sealed class TranscriptionPipeline : IAsyncDisposable
         var session = _asrSession!;
         session.AcceptWaveform(segment, _preprocessor.TargetFormat.SampleRate);
         session.InputFinished();
-        if (session.IsReady()) session.Decode();
+        if (session.IsReady())
+        {
+            session.Decode();
+            Interlocked.Increment(ref _decodes);
+        }
         var result = session.GetResult();
         var text = result.Text ?? "";
         Emit(_accumulator.Update(text, isEndpoint: true, audioTime), audioTime);

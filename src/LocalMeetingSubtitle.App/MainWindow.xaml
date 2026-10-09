@@ -183,6 +183,20 @@
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center"
                             Margin="12,0,0,0">
+                    <TextBlock Text="{Binding AudioHealthText}" VerticalAlignment="Center" FontSize="11.5"
+                               Margin="0,0,12,0" MaxWidth="440" TextTrimming="CharacterEllipsis">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasAudioHealthWarning}" Value="True">
+                                        <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                     <Path Data="{StaticResource IconVolume}" Stroke="{DynamicResource TextMuted}"
                           StrokeThickness="1.6" Fill="Transparent" Width="18" Height="18" Stretch="Uniform"
                           VerticalAlignment="Center" Margin="0,0,8,0" />

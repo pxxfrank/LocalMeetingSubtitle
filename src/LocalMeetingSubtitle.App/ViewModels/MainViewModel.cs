@@ -56,6 +56,9 @@ public sealed class MainViewModel : ObservableObject
     private bool _isBusy;
 
     private DispatcherTimer? _warningTimer;
+    private DispatcherTimer? _healthTimer;
+    private string _audioHealthText = "";
+    private bool _audioHealthWarning;
 
     public MainViewModel(
         IShellService shell,
@@ -201,6 +204,24 @@ public sealed class MainViewModel : ObservableObject
     }
 
     public string LatencyText => $"{LatencyMs:0} ms";
+
+    /// <summary>
+    /// Plain-language diagnosis of where transcription is stuck — model unusable, nothing being
+    /// captured, or audio arriving but the recognizer never decoding — so the user can tell what to
+    /// fix without reading the log.
+    /// </summary>
+    public string AudioHealthText
+    {
+        get => _audioHealthText;
+        private set => SetProperty(ref _audioHealthText, value);
+    }
+
+    /// <summary>True when <see cref="AudioHealthText"/> reports something the user must act on.</summary>
+    public bool HasAudioHealthWarning
+    {
+        get => _audioHealthWarning;
+        private set => SetProperty(ref _audioHealthWarning, value);
+    }
 
     public string HotwordModeText => _hotwordService.Mode switch
     {
@@ -389,6 +410,11 @@ public sealed class MainViewModel : ObservableObject
 
         IsPreparing = false;
         UpdateReadinessStatus();
+
+        _healthTimer ??= CreateHealthTimer();
+        _healthTimer.Start();
+        UpdateAudioHealth();
+
         _log.Info($"Startup check complete: native={_nativeOk} ({_nativeVersion}), model={_descriptor?.Id ?? "none"} installed={_modelInstalled}, devices={Devices.Count}.");
     }
 
@@ -952,6 +978,70 @@ public sealed class MainViewModel : ObservableObject
             HasWarning = false;
         };
         return timer;
+    }
+
+    private DispatcherTimer CreateHealthTimer()
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        timer.Tick += (_, _) => UpdateAudioHealth();
+        return timer;
+    }
+
+    /// <summary>
+    /// Works out which link of the chain is stopping subtitles from appearing and shows it in the
+    /// footer: unusable model, no audio being captured, or audio captured but never decoded.
+    /// </summary>
+    private void UpdateAudioHealth()
+    {
+        if (!_nativeOk)
+        {
+            SetAudioHealth("原生库缺失 / native library missing", warning: true);
+            return;
+        }
+
+        if (_descriptor is null)
+        {
+            SetAudioHealth("未配置模型 / no model configured", warning: true);
+            return;
+        }
+
+        if (!_modelInstalled)
+        {
+            SetAudioHealth("模型未安装 / model not installed", warning: true);
+            return;
+        }
+
+        var pipeline = _pipeline;
+        if (pipeline is null)
+        {
+            SetAudioHealth("就绪（未开始）/ ready", warning: false);
+            return;
+        }
+
+        var d = pipeline.GetDiagnostics();
+        if (!d.Running)
+        {
+            SetAudioHealth("就绪（未开始）/ ready", warning: false);
+        }
+        else if (d.FramesReceived == 0 || d.SecondsSinceLastFrame > 2.0)
+        {
+            SetAudioHealth("未采集到声音 — 请检查播放设备 / no audio captured", true);
+        }
+        else if (d.Decodes == 0)
+        {
+            double seconds = d.SamplesAccepted / (double)TargetSampleRate;
+            SetAudioHealth($"已采集 {seconds:0.0}s 音频，识别器未就绪 / {seconds:0.0}s captured, not ready yet", true);
+        }
+        else
+        {
+            SetAudioHealth("识别中 / recognizing", warning: false);
+        }
+    }
+
+    private void SetAudioHealth(string text, bool warning)
+    {
+        AudioHealthText = text;
+        HasAudioHealthWarning = warning;
     }
 
     private void Dispatch(Action action)
