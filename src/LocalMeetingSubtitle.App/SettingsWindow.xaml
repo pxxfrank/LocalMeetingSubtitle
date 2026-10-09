@@ -137,6 +137,19 @@
 
                 <Border Height="1" Background="{DynamicResource BorderDefault}" Margin="0,16" />
 
+                <!-- ===== 会后录音 / Post-meeting recording ===== -->
+                <TextBlock Text="会后录音 / Post-meeting recording" FontWeight="SemiBold" Margin="0,0,0,10" />
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="模式 / Mode:" VerticalAlignment="Center" Margin="0,0,10,0" />
+                    <ComboBox Width="220" ItemsSource="{Binding RecordingModes}" DisplayMemberPath="Label"
+                              SelectedValuePath="Mode" SelectedValue="{Binding RecordingMode}" />
+                </StackPanel>
+                <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" FontSize="12"
+                           Foreground="{DynamicResource TextMuted}"
+                           Text="默认不录音；选择临时录音时，音频仅保存在本机、用于一次会后分角色分析，并在分析后（或下次启动）自动清除；不上传任何语音数据。" />
+
+                <Border Height="1" Background="{DynamicResource BorderDefault}" Margin="0,16" />
+
                 <!-- ===== 热词 / Hotwords ===== -->
                 <TextBlock Text="热词 / Hotwords (每行一个 / one per line)" FontWeight="SemiBold"
                            Margin="0,0,0,10" />

@@ -9,6 +9,7 @@ using LocalMeetingSubtitle.Core.Abstractions;
 using LocalMeetingSubtitle.Core.Audio;
 using LocalMeetingSubtitle.Core.Models;
 using LocalMeetingSubtitle.Core.Transcription;
+using LocalMeetingSubtitle.Storage;
 using Microsoft.Win32;
 
 namespace LocalMeetingSubtitle.App.ViewModels;
@@ -41,6 +42,9 @@ public sealed class MainViewModel : ObservableObject
     private readonly Func<IAsrEngine> _engineFactory;
     private readonly ISpeakerRepository _speakerRepository;
     private readonly ISpeakerDiarizationService _diarization;
+    private readonly IRecordingService _recording;
+    private readonly IAudioAssetRepository _audioAssets;
+    private readonly LocalAudioAssetStore _recordingStore;
 
     private readonly List<SubtitleSegment> _segments = new();
     private readonly Dictionary<long, SpeakerAssignment> _assignments = new();
@@ -52,6 +56,14 @@ public sealed class MainViewModel : ObservableObject
     private IAsrEngine? _ownedEngine;
     private ModelDescriptor? _descriptor;
     private SubtitleLineViewModel? _partial;
+
+    // ---- Optional post-meeting recording (opt-in; off by default) ------------------
+    /// <summary>The capture instance whose frames are being recorded (subscription owner).</summary>
+    private WasapiLoopbackCaptureService? _recordingCapture;
+    private EventHandler<AudioFramesEventArgs>? _recordingFramesHandler;
+    private string? _lastRecordingAssetId;
+    private string? _lastRecordingPath;
+    private bool _lastRecordingTemporary;
 
     private bool _nativeOk;
     private string _nativeVersion = "";
@@ -76,7 +88,10 @@ public sealed class MainViewModel : ObservableObject
         Func<WasapiLoopbackCaptureService> captureFactory,
         Func<IAsrEngine> engineFactory,
         ISpeakerRepository speakerRepository,
-        ISpeakerDiarizationService diarization)
+        ISpeakerDiarizationService diarization,
+        IRecordingService recording,
+        IAudioAssetRepository audioAssets,
+        LocalAudioAssetStore recordingStore)
     {
         Shell = shell;
         _log = log;
@@ -90,6 +105,9 @@ public sealed class MainViewModel : ObservableObject
         _engineFactory = engineFactory;
         _speakerRepository = speakerRepository;
         _diarization = diarization;
+        _recording = recording;
+        _audioAssets = audioAssets;
+        _recordingStore = recordingStore;
         _dispatcher = Dispatcher.CurrentDispatcher;
 
         StartCommand = new AsyncRelayCommand(StartAsync, () => CanStart);
@@ -464,7 +482,10 @@ public sealed class MainViewModel : ObservableObject
         private set => SetProperty(ref _hasSpeakers, value);
     }
 
-    /// <summary>Imports a local recording and runs offline speaker diarization over the current session.</summary>
+    /// <summary>
+    /// Runs offline speaker diarization over the current session. When the session has an opt-in
+    /// recording it is analyzed directly (no file dialog); otherwise the user picks a file.
+    /// </summary>
     public async Task ImportAndDiarizeAsync()
     {
         if (_session is null)
@@ -473,11 +494,31 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
-        var path = Shell.PickAudioFile();
+        // Prefer this session's own recording when it still exists and is registered.
+        string? path = null;
+        string? recordingAssetId = null;
+        if (!string.IsNullOrWhiteSpace(_lastRecordingAssetId)
+            && !string.IsNullOrWhiteSpace(_lastRecordingPath)
+            && File.Exists(_lastRecordingPath))
+        {
+            var asset = await _audioAssets.GetAsync(_lastRecordingAssetId).ConfigureAwait(true);
+            if (asset is not null && string.Equals(asset.SessionId, _session.SessionId, StringComparison.Ordinal))
+            {
+                path = _lastRecordingPath;
+                recordingAssetId = _lastRecordingAssetId;
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(path))
         {
-            return;
+            path = Shell.PickAudioFile();
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
         }
+
+        var usedRecording = recordingAssetId is not null;
 
         IsDiarizing = true;
         DiarizationProgress = 0;
@@ -491,7 +532,8 @@ public sealed class MainViewModel : ObservableObject
                 path,
                 speakerCount > 0 ? SpeakerCountMode.Manual : SpeakerCountMode.Auto,
                 speakerCount,
-                _settings.DiarizationClusteringThreshold);
+                _settings.DiarizationClusteringThreshold,
+                recordingAssetId);
 
             var progress = new Progress<DiarizationProgress>(p =>
             {
@@ -506,7 +548,16 @@ public sealed class MainViewModel : ObservableObject
             if (result.Success)
             {
                 await RefreshSpeakersAsync().ConfigureAwait(true);
-                DiarizationStatusText = $"完成：{result.SpeakerCount} 位发言人，{result.AssignedSegments} 条字幕已归属 / done";
+                var status = $"完成：{result.SpeakerCount} 位发言人，{result.AssignedSegments} 条字幕已归属 / done";
+
+                // A temporary recording exists only for one analysis: delete it once it has served.
+                if (usedRecording && _lastRecordingTemporary && recordingAssetId is not null)
+                {
+                    await CleanupRecordingAsync(recordingAssetId).ConfigureAwait(true);
+                    status += "（临时录音已清除 / temporary recording cleared）";
+                }
+
+                DiarizationStatusText = status;
                 RaiseWarning($"说话人分离完成 / diarization done：{result.SpeakerCount} speakers, {result.AssignedSegments} segments, {result.NeedsConfirmation} need confirmation.");
             }
             else
@@ -624,6 +675,160 @@ public sealed class MainViewModel : ObservableObject
         string.IsNullOrWhiteSpace(speaker.DisplayName) ? "发言人 " + speaker.Label : speaker.DisplayName;
 
     // =====================================================================
+    // Optional post-meeting recording (opt-in; off by default)
+    // =====================================================================
+
+    /// <summary>
+    /// Starts an opt-in recording and registers it as an audio asset. Any failure is contained:
+    /// it is logged and surfaced as a non-blocking warning, and transcription keeps running.
+    /// </summary>
+    private async Task TryStartRecordingAsync(WasapiLoopbackCaptureService capture, MeetingSession session)
+    {
+        var mode = _settings.RecordingMode;
+        try
+        {
+            LocalDataPaths.EnsureRecordingsDirectory();
+
+            // Every recording file is named <audioAssetId>.wav so the cleanup sweep can tell whether
+            // a file is still referenced by a row.
+            var assetId = Guid.NewGuid().ToString("N");
+            var path = Path.Combine(LocalDataPaths.RecordingsDirectory, assetId + ".wav");
+
+            await _recording.StartAsync(path).ConfigureAwait(true);
+
+            _recordingCapture = capture;
+            _recordingFramesHandler = (_, e) => _recording.Write(e.Samples, e.Format);
+            capture.FramesAvailable += _recordingFramesHandler;
+
+            var temporary = mode == RecordingMode.Temporary;
+            await _audioAssets.AddAsync(new AudioAsset
+            {
+                AudioAssetId = assetId,
+                SessionId = session.SessionId,
+                Path = path,
+                Kind = temporary ? AudioAssetKind.TempRecording : AudioAssetKind.RetainedRecording,
+                IsTemporary = temporary,
+                DeleteAfterUtc = temporary ? DateTimeOffset.Now.AddHours(24) : null
+            }).ConfigureAwait(true);
+
+            _lastRecordingAssetId = assetId;
+            _lastRecordingPath = path;
+            _lastRecordingTemporary = temporary;
+            _log.Info($"Post-meeting recording enabled ({mode}) → {path}.");
+        }
+        catch (Exception ex)
+        {
+            _log.Error("Starting post-meeting recording failed; continuing without it", ex);
+            RaiseWarning("录音启动失败，转写继续 / recording failed to start; transcription continues：" + ex.Message);
+            await StopRecordingSafeAsync().ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>
+    /// Unsubscribes the frames handler, stops the recorder (if running) and updates the asset row
+    /// with the finished size/duration. Safe to call when no recording is active.
+    /// </summary>
+    private async Task StopRecordingSafeAsync()
+    {
+        var handler = _recordingFramesHandler;
+        var capture = _recordingCapture;
+        if (capture is not null && handler is not null)
+        {
+            try
+            {
+                capture.FramesAvailable -= handler;
+            }
+            catch (Exception ex)
+            {
+                _log.Warn($"Unsubscribing the recorder failed: {ex.Message}");
+            }
+        }
+
+        _recordingFramesHandler = null;
+        _recordingCapture = null;
+
+        if (!_recording.IsRecording)
+        {
+            return;
+        }
+
+        try
+        {
+            var result = await _recording.StopAsync().ConfigureAwait(true);
+            _lastRecordingPath = result.Path;
+
+            var assetId = _lastRecordingAssetId;
+            if (assetId is not null)
+            {
+                var asset = await _audioAssets.GetAsync(assetId).ConfigureAwait(true);
+                if (asset is not null)
+                {
+                    asset.SampleRate = result.SampleRate;
+                    asset.Channels = result.Channels;
+                    asset.DurationMs = (long)result.Duration.TotalMilliseconds;
+                    asset.SizeBytes = result.SizeBytes;
+                    await _audioAssets.AddAsync(asset).ConfigureAwait(true);
+                }
+            }
+
+            _log.Info($"Recording stopped: {result.Path} ({result.Duration.TotalSeconds:0.0}s, {result.SizeBytes} bytes).");
+        }
+        catch (Exception ex)
+        {
+            _log.Error("Stopping the recording failed", ex);
+        }
+    }
+
+    /// <summary>Crash recovery: removes expired temporary recordings and orphaned files on startup.</summary>
+    private async Task RunRecordingCleanupAsync()
+    {
+        try
+        {
+            var deleted = await _recordingStore.CleanupAsync(_audioAssets, DateTimeOffset.Now).ConfigureAwait(true);
+            if (deleted > 0)
+            {
+                _log.Info($"Recording cleanup removed {deleted} file(s).");
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Warn($"Recording cleanup failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>Deletes a temporary recording's file (best effort) and its registry row.</summary>
+    private async Task CleanupRecordingAsync(string audioAssetId)
+    {
+        try
+        {
+            var asset = await _audioAssets.GetAsync(audioAssetId).ConfigureAwait(true);
+            if (asset is not null && File.Exists(asset.Path))
+            {
+                try
+                {
+                    File.Delete(asset.Path);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    _log.Warn($"Deleting the temporary recording file failed: {ex.Message}");
+                }
+            }
+
+            await _audioAssets.DeleteAsync(audioAssetId).ConfigureAwait(true);
+
+            if (string.Equals(_lastRecordingAssetId, audioAssetId, StringComparison.Ordinal))
+            {
+                _lastRecordingAssetId = null;
+                _lastRecordingPath = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Warn($"Cleaning up the temporary recording failed: {ex.Message}");
+        }
+    }
+
+    // =====================================================================
     // Initialization
     // =====================================================================
 
@@ -640,6 +845,9 @@ public sealed class MainViewModel : ObservableObject
         }
 
         ApplySettings(_settings);
+
+        // Crash recovery: drop expired temporary recordings and orphaned files left by a prior run.
+        await RunRecordingCleanupAsync().ConfigureAwait(true);
 
         await Task.Run(() =>
         {
@@ -808,6 +1016,12 @@ public sealed class MainViewModel : ObservableObject
             await pipeline.StartAsync(device.Id, session).ConfigureAwait(true);
             _performanceMonitor.Start();
             _log.Info($"Session {session.SessionId} started on '{device.FriendlyName}' with {descriptor.Id}.");
+
+            // Optional post-meeting recording. A failure here must never break transcription.
+            if (_settings.RecordingMode != RecordingMode.None)
+            {
+                await TryStartRecordingAsync(capture, session).ConfigureAwait(true);
+            }
         }
         catch (Exception ex)
         {
@@ -911,6 +1125,9 @@ public sealed class MainViewModel : ObservableObject
             try { engine.Dispose(); }
             catch (Exception ex) { _log.Warn($"Engine dispose failed: {ex.Message}"); }
         }
+
+        // Stop any opt-in recording and persist its final size/duration.
+        await StopRecordingSafeAsync().ConfigureAwait(true);
 
         if (State is TranscriptionState.Transcribing or TranscriptionState.Paused or TranscriptionState.LoadingModel)
         {

@@ -27,6 +27,9 @@ public static class LocalDataPaths
     public static string ModelsDirectory => Path.Combine(Root, "models");
     public static string ExportsDirectory => Path.Combine(Root, "exports");
 
+    /// <summary>Holds opt-in post-meeting recordings (only ever created when the user records).</summary>
+    public static string RecordingsDirectory => Path.Combine(Root, "recordings");
+
     public static string EnsureRootDirectory()
     {
         Directory.CreateDirectory(Root);
@@ -51,6 +54,12 @@ public static class LocalDataPaths
         return ExportsDirectory;
     }
 
+    public static string EnsureRecordingsDirectory()
+    {
+        Directory.CreateDirectory(RecordingsDirectory);
+        return RecordingsDirectory;
+    }
+
     /// <summary>Creates the root plus every well-known sub-directory.</summary>
     public static void EnsureAllDirectories()
     {
@@ -58,6 +67,7 @@ public static class LocalDataPaths
         EnsureLogsDirectory();
         EnsureModelsDirectory();
         EnsureExportsDirectory();
+        EnsureRecordingsDirectory();
     }
 
     /// <summary>

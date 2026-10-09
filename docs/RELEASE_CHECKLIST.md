@@ -67,7 +67,7 @@ Legend: `PASS` = verified with evidence · `PARTIAL` = some sub-checks pass, oth
 | SD-14 | 不影响正常会议播放 | 实机播放验证 | 无异常 | 未执行（无目标硬件/真实会议） | — | 目标硬件 | **NOT_TESTED** |
 | SD-15 | 不导致实时 ASR 持续积压 | 目标机并发压测 | 队列不持续增长 | 隔离设计已就位（独立 **BelowNormal** 线程、`SemaphoreSlim(1,1)` 单任务、低线程上限、按文件读取不经实时队列）；**未在目标机并发实测** | 代码 | 目标硬件 | **NOT_TESTED** |
 | SD-16 | 可取消任务并安全恢复 | 触发取消 | 可取消且状态一致 | `CancellationToken` 贯穿解码/引擎/落库；原生回调返回非零即中止；结果落库为 `Cancelled`。**未做端到端取消演示** | 代码 | 开发主机 | **PARTIAL** |
-| SD-17 | 临时音频删除策略正确 | 检查临时文件生命周期 | 到期清理、崩溃可恢复 | `audio_assets` 表 + `IsTemporary`/`DeleteAfterUtc` + `GetExpiredTemporaryAsync` 有单测；**采集侧录制与启动清理尚未接线** | `SqliteSpeakerRepositoryTests` | 开发主机 | **PARTIAL** |
+| SD-17 | 临时音频删除策略正确 | 检查临时文件生命周期 | 到期清理、崩溃可恢复 | 采集侧为**可选录制**（默认关闭，不落盘）：`IRecordingService`/`WaveRecordingService` 后台 16 kHz 单声道写入，帧经有界通道拷贝、不阻塞采集线程；临时录音在一次分角色分析成功后即删；启动时 `LocalAudioAssetStore.CleanupAsync` 清理到期临时资产与 >24h 孤儿文件。`RecordingTests` 覆盖写入往返与清理 | `RecordingTests` | 开发主机 | **PASS** |
 | SD-18 | 真实多发言人音频验证通过 | 真实 2 人音频分析 | 正确区分并归属 | 2 人片段 → speaker 0（前）与 speaker 1（后）正确区分（置信度 0.84–0.97）；字幕正确归属；`OriginalText` 未改动 | `SpeakerDiarizationRealModelTests` | 开发主机 | **PASS** |
 
 ### SD summary
@@ -75,6 +75,7 @@ Legend: `PASS` = verified with evidence · `PARTIAL` = some sub-checks pass, oth
 - **V0.4.1**（导入 → 离线分离 → 对齐 → 匿名编号 → 字幕板标签）：SD-01/02/03/05/06/10/12/13/18 在开发主机 **PASS**。
 - **V0.4.2**（发言人管理 + 分角色过滤/导出）本版本已实现：SD-07/08/09 为 **PARTIAL**（UI 已实现、存储层有单测，但**未人工交互验证**）；SD-11 格式层 **PASS**、UI 未交互验证。
 - SD-14/15 需**目标硬件/真实会议**并发验证，标记 **NOT_TESTED**（设计上的性能隔离已就位）。
-- SD-04/16/17 为 **PARTIAL**（链路已就位，缺 UI 或端到端演示）。
+- SD-04/16 为 **PARTIAL**（链路已就位，缺 UI 或端到端演示）。
+- SD-17 已接线并通过单测（录制写入往返 + 到期/孤儿清理，默认不录制）：**PASS**（UI 交互未人工验证）。
 - **V0.4.3**（双路采集、准实时）尚未开始。
 - 因此 **V0.4 整体为 Release Candidate**，不得宣称已通过实机验收。

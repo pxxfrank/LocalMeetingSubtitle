@@ -72,6 +72,18 @@ public sealed class SettingsViewModel : ObservableObject
     private bool _enableVadSegmenting = true;
     public bool EnableVadSegmenting { get => _enableVadSegmenting; set => SetProperty(ref _enableVadSegmenting, value); }
 
+    private RecordingMode _recordingMode = RecordingMode.None;
+    /// <summary>Opt-in post-meeting recording mode; defaults to <see cref="RecordingMode.None"/>.</summary>
+    public RecordingMode RecordingMode { get => _recordingMode; set => SetProperty(ref _recordingMode, value); }
+
+    /// <summary>The three recording modes offered by the settings combo box.</summary>
+    public IReadOnlyList<RecordingModeOption> RecordingModes { get; } = new[]
+    {
+        new RecordingModeOption(RecordingMode.None, "不录音 / None"),
+        new RecordingModeOption(RecordingMode.Temporary, "临时录音 / Temporary"),
+        new RecordingModeOption(RecordingMode.Retain, "保留录音 / Retain")
+    };
+
     private string _hotwordsText = "";
     public string HotwordsText { get => _hotwordsText; set => SetProperty(ref _hotwordsText, value); }
 
@@ -126,6 +138,7 @@ public sealed class SettingsViewModel : ObservableObject
         AutoScrollEnabled = _settings.AutoScrollEnabled;
         ExportIncludeTimestamps = _settings.ExportIncludeTimestamps;
         EnableVadSegmenting = _settings.EnableVadSegmenting;
+        RecordingMode = _settings.RecordingMode;
         Theme = string.IsNullOrWhiteSpace(_settings.Theme) ? ThemeManager.Light : _settings.Theme;
 
         try
@@ -153,6 +166,7 @@ public sealed class SettingsViewModel : ObservableObject
             _settings.AutoScrollEnabled = AutoScrollEnabled;
             _settings.ExportIncludeTimestamps = ExportIncludeTimestamps;
             _settings.EnableVadSegmenting = EnableVadSegmenting;
+            _settings.RecordingMode = RecordingMode;
             _settings.Theme = Theme;
 
             await _settingsRepository.SaveAsync(_settings).ConfigureAwait(true);
@@ -184,3 +198,6 @@ public sealed class SettingsViewModel : ObservableObject
         return result;
     }
 }
+
+/// <summary>One selectable post-meeting recording mode for the settings combo box.</summary>
+public sealed record RecordingModeOption(RecordingMode Mode, string Label);

@@ -104,7 +104,10 @@ public partial class App : Application
             () => _services.GetRequiredService<WasapiLoopbackCaptureService>(),
             () => _services.GetRequiredService<Func<IAsrEngine>>()(),
             _services.GetRequiredService<ISpeakerRepository>(),
-            _services.GetRequiredService<ISpeakerDiarizationService>());
+            _services.GetRequiredService<ISpeakerDiarizationService>(),
+            _services.GetRequiredService<IRecordingService>(),
+            _services.GetRequiredService<IAudioAssetRepository>(),
+            _services.GetRequiredService<LocalAudioAssetStore>());
         _shell.Attach(_mainViewModel);
 
         _logger.Info("View-model created; creating tray icon.");
@@ -235,6 +238,10 @@ public partial class App : Application
         services.AddSingleton<IAudioAssetRepository>(sp => new SqliteAudioAssetRepository(sp.GetRequiredService<SqliteDatabase>()));
         services.AddSingleton<IAudioFileLoader>(_ => new NaudioAudioFileLoader());
         services.AddSingleton<ISpeakerAlignmentService>(_ => new SpeakerAlignmentService());
+
+        // Opt-in post-meeting recording (default: off) and the on-disk asset store that cleans it up.
+        services.AddSingleton<IRecordingService>(sp => new WaveRecordingService(sp.GetRequiredService<IAppLogger>()));
+        services.AddSingleton(sp => new LocalAudioAssetStore(LocalDataPaths.RecordingsDirectory, sp.GetRequiredService<IAppLogger>()));
 
         // A second, keyed model manager so diarization descriptors never enter the ASR catalog.
         services.AddKeyedSingleton<IModelManager>("diarization",

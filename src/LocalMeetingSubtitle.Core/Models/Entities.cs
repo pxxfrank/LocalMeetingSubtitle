@@ -94,6 +94,12 @@ public sealed class AppSettings
 
     /// <summary>Diarization clustering threshold (higher merges more aggressively → fewer speakers).</summary>
     public double DiarizationClusteringThreshold { get; set; } = 0.5;
+
+    /// <summary>
+    /// Opt-in post-meeting recording. Defaults to <see cref="RecordingMode.None"/>: no audio is
+    /// recorded and nothing is ever persisted unless the user explicitly chooses otherwise in settings.
+    /// </summary>
+    public RecordingMode RecordingMode { get; set; } = RecordingMode.None;
 }
 
 public sealed class PerformanceMetric

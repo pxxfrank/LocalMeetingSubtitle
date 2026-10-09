@@ -36,6 +36,17 @@ public enum AudioAssetKind
     RetainedRecording = 2
 }
 
+/// <summary>Whether (and for how long) the app records the captured audio for post-meeting use.</summary>
+public enum RecordingMode
+{
+    /// <summary>No recording; no audio is ever persisted. The default.</summary>
+    None = 0,
+    /// <summary>Record locally and delete automatically after one diarization run (or on next start).</summary>
+    Temporary = 1,
+    /// <summary>Record locally and keep the file for later re-analysis.</summary>
+    Retain = 2
+}
+
 /// <summary>
 /// An anonymous speaker within one session: "A", "B", ... Voiceprint clustering cannot
 /// identify a person, so a speaker is only ever an anonymous label the user may rename.

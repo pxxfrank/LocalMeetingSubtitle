@@ -510,3 +510,26 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
 ### 未完成
 - **V0.4.3**（双路采集、准实时）尚未开始；会后**录音采集侧**仍未接线；0.4.x 发布产物未重建。
 - SD-07/08/09/11 的 UI **未人工交互验证**（存储层与格式层有单测）。
+
+## Update — 会后录音采集与清理 V0.4.2b (2026-10-09)
+
+补齐 **SD-17** 与「会中录音 → 会后分离 → 自动清理」闭环。**默认不录音；除非用户显式启用，绝不持久化任何音频。**
+
+- **`IRecordingService`**（`Core/Abstractions/RecordingAbstractions.cs`）+ 实现
+  **`Audio/WaveRecordingService.cs`**：捕获帧经**有界 Channel** 入队（`Write` 克隆后 `TryWrite`，
+  **绝不阻塞采集线程**），单一后台写线程用 `DefaultAudioPreprocessor(16000)` 下混/重采样并写
+  16 kHz 单声道 16-bit WAV。写线程落后时丢弃并计数（不阻塞、不丢识别）。
+- **`RecordingMode { None, Temporary, Retain }`**（`Core/Models`），持久化为 `AppSettings.RecordingMode`（默认 `None`，JSON 字段，无需迁移）。
+- **`LocalDataPaths.RecordingsDirectory`** = `%LOCALAPPDATA%\SubtitleJun\recordings`（ASCII 路径）。
+- **`Storage/LocalAudioAssetStore.CleanupAsync`**：删除到期的临时资产（文件+行），再清除
+  `recordings/` 下**未被资产行引用且超过 24 小时**的孤儿文件（文件名即 `AudioAssetId`）；锁定文件不抛异常。
+- **接线**（`MainViewModel`）：开始会议且 `RecordingMode != None` 时启动录音、订阅 `capture.FramesAvailable`
+  写入、登记 `AudioAsset`（临时/保留）；停止时退订并回写时长/大小；`InitializeAsync` 启动时执行一次
+  残留清理（崩溃恢复）；`ImportAndDiarizeAsync` **优先使用本会话的录音**（无需再选文件），
+  分离成功后若为临时录音则**删除文件与资产行**。录音失败仅记日志+提示，绝不影响转写。
+- **设置界面**：「会后录音」下拉 + 明确隐私说明（本机保存、用于一次会后分析、分析后或下次启动自动清除、不上传）。
+- **测试**：`RecordingTests`（WAV 往返：1 s 440 Hz → 时长≈1 s、RMS>0.1；清理：到期临时删除、保留留存、25 h 孤儿删除、新孤儿保留）。
+
+### 测试
+- 单元 **143 → 145**；集成 12；性能 3 通过 + 1 跳过；构建 0 错误。
+- **SD-17 更新为 PASS**（开发主机：写入/清理有单测；录音 UI 未人工交互验证）。
