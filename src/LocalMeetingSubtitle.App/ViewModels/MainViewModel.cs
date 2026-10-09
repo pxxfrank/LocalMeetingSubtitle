@@ -340,6 +340,19 @@ public sealed class MainViewModel : ObservableObject
 
     public bool MinimizeToTrayOnClose { get; private set; } = true;
 
+    /// <summary>True when the dark theme is active (drives the header theme-toggle icon).</summary>
+    public bool IsDarkTheme => string.Equals(_settings.Theme, ThemeManager.Dark, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Flips the light/dark theme, applies it immediately and persists the choice.</summary>
+    public void ToggleTheme()
+    {
+        var next = IsDarkTheme ? ThemeManager.Light : ThemeManager.Dark;
+        _settings.Theme = next;
+        ThemeManager.Apply(next);
+        OnPropertyChanged(nameof(IsDarkTheme));
+        SaveSettingsSafe();
+    }
+
     /// <summary>Segments of the current session (for export/search).</summary>
     public IReadOnlyList<SubtitleSegment> Segments => _segments;
 
@@ -862,6 +875,13 @@ public sealed class MainViewModel : ObservableObject
         FloatingClickThrough = settings.FloatingClickThrough;
         MinimizeToTrayOnClose = settings.MinimizeToTrayOnClose;
         AutoScrollEnabled = settings.AutoScrollEnabled;
+
+        var theme = string.IsNullOrWhiteSpace(settings.Theme) ? ThemeManager.Light : settings.Theme;
+        if (!string.Equals(theme, ThemeManager.Current, StringComparison.OrdinalIgnoreCase))
+        {
+            ThemeManager.Apply(theme);
+        }
+        OnPropertyChanged(nameof(IsDarkTheme));
     }
 
     public AppSettings CurrentSettings => _settings;

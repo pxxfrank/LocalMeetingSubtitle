@@ -1,0 +1,42 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Claude (Anthropic) style — Light palette. -->
+    <SolidColorBrush x:Key="BgApp" Color="#FAF9F5" />
+    <SolidColorBrush x:Key="BgSurface" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="BgSurfaceAlt" Color="#F5F4EF" />
+    <SolidColorBrush x:Key="BgSubtle" Color="#F0EEE8" />
+    <SolidColorBrush x:Key="BorderDefault" Color="#E8E6DF" />
+    <SolidColorBrush x:Key="BorderStrong" Color="#D8D5CC" />
+    <SolidColorBrush x:Key="TextPrimary" Color="#1F1E1D" />
+    <SolidColorBrush x:Key="TextSecondary" Color="#6B6A66" />
+    <SolidColorBrush x:Key="TextMuted" Color="#96948E" />
+    <SolidColorBrush x:Key="TextOnAccent" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="Accent" Color="#C96442" />
+    <SolidColorBrush x:Key="AccentHover" Color="#B4553A" />
+    <SolidColorBrush x:Key="AccentSoft" Color="#F6EAE4" />
+    <SolidColorBrush x:Key="AccentBorder" Color="#E4C9BC" />
+    <SolidColorBrush x:Key="Success" Color="#2E7D5B" />
+    <SolidColorBrush x:Key="Warning" Color="#8A6A1F" />
+    <SolidColorBrush x:Key="WarningBg" Color="#FBF3E2" />
+    <SolidColorBrush x:Key="WarningBorder" Color="#E8D9B0" />
+    <SolidColorBrush x:Key="Danger" Color="#C0392B" />
+
+    <CornerRadius x:Key="RadiusSmall">6</CornerRadius>
+    <CornerRadius x:Key="RadiusMedium">10</CornerRadius>
+
+    <!-- Make the STOCK WPF control templates (ComboBox, TextBox, ScrollBar, CheckBox, ...)
+         theme-aware: they read SystemColors, not the Background property. -->
+    <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#1F1E1D" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#1F1E1D" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlLightBrushKey}" Color="#F5F4EF" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlDarkBrushKey}" Color="#E8E6DF" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.GrayTextBrushKey}" Color="#96948E" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#F6EAE4" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#1F1E1D" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#F0EEE8" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#1F1E1D" />
+
+</ResourceDictionary>

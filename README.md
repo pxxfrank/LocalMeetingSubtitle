@@ -17,7 +17,7 @@ LocalMeetingSubtitle 是一个**完全离线、纯 CPU** 的 Windows 桌面会�
 - 字幕**只保存在本机**（`%LOCALAPPDATA%\LocalMeetingSubtitle\`），提供置顶悬浮字幕、搜索、热词、文本纠正与 TXT/SRT/Markdown 导出。
 - 运行期**不发起任何网络请求**：唯一引用 `System.Net.Http` 的 `ModelDownloads` 程序集与识别链路隔离，可静态验证（见“离线保证”）。
 
-技术栈：.NET 8 / WPF（`net8.0-windows`，x64，**Google Material Design 3** 界面，基于 `MaterialDesignThemes` 5.3.2 / MIT）、NAudio 2.2.1、sherpa-onnx 1.13.8、Microsoft.Data.Sqlite 8.0.31（WAL）。
+技术栈：.NET 8 / WPF（`net8.0-windows`，x64，**Claude 风格极简界面**：自绘主题 + 线性图标，支持**明/暗主题实时切换**，不依赖任何第三方 UI 框架）、NAudio 2.2.1、sherpa-onnx 1.13.8、Microsoft.Data.Sqlite 8.0.31（WAL）。
 
 ## 快速开始 / Quick start
 

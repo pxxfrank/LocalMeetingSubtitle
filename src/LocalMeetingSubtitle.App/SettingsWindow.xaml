@@ -1,162 +1,152 @@
 <Window x:Class="LocalMeetingSubtitle.App.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         Title="设置 / Settings"
         Height="660" Width="560" MinHeight="440" MinWidth="460"
         WindowStartupLocation="CenterOwner"
-        FontFamily="Microsoft YaHei UI, Roboto, Segoe UI"
-        Background="{DynamicResource MaterialDesignPaper}"
-        TextElement.Foreground="{DynamicResource MaterialDesignBody}"
+        FontFamily="Microsoft YaHei UI, Segoe UI"
+        Background="{DynamicResource BgApp}"
+        TextElement.Foreground="{DynamicResource TextPrimary}"
         TextOptions.TextFormattingMode="Display" UseLayoutRounding="True">
     <DockPanel>
 
         <!-- Header -->
-        <materialDesign:ColorZone DockPanel.Dock="Top" Mode="PrimaryMid" Padding="16,14"
-                                  materialDesign:ElevationAssist.Elevation="Dp4">
+        <Border DockPanel.Dock="Top"
+                Background="{DynamicResource BgSurface}"
+                BorderBrush="{DynamicResource BorderDefault}"
+                BorderThickness="0,0,0,1"
+                Padding="18,14">
             <StackPanel Orientation="Horizontal">
-                <materialDesign:PackIcon Kind="Cog" Width="24" Height="24" VerticalAlignment="Center"
-                                         Margin="0,0,10,0" />
-                <TextBlock Text="设置 / Settings" FontSize="19" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <Path Data="{StaticResource IconSettings}" Stroke="{DynamicResource Accent}" StrokeThickness="1.6"
+                      Fill="Transparent" Width="20" Height="20" Stretch="Uniform"
+                      VerticalAlignment="Center" Margin="0,0,10,0" />
+                <TextBlock Text="设置 / Settings" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
             </StackPanel>
-        </materialDesign:ColorZone>
+        </Border>
 
         <!-- Action bar -->
-        <materialDesign:Card DockPanel.Dock="Bottom" Margin="12" Padding="12,10" UniformCornerRadius="12"
-                             materialDesign:ElevationAssist.Elevation="Dp2">
+        <Border DockPanel.Dock="Bottom"
+                Background="{DynamicResource BgSurface}"
+                BorderBrush="{DynamicResource BorderDefault}"
+                BorderThickness="0,1,0,0"
+                Padding="18,10">
             <DockPanel>
                 <TextBlock DockPanel.Dock="Left" Text="{Binding StatusMessage}" VerticalAlignment="Center"
-                           Foreground="{DynamicResource PrimaryHueMidBrush}" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Success}" FontWeight="SemiBold" FontSize="12.5"
                            Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}" />
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Style="{StaticResource AppPrimaryButton}" Command="{Binding SaveCommand}">
-                        <StackPanel Orientation="Horizontal">
-                            <materialDesign:PackIcon Kind="ContentSave" VerticalAlignment="Center" Margin="0,0,6,0" />
-                            <TextBlock Text="保存 / Save" VerticalAlignment="Center" />
-                        </StackPanel>
+                    <Button Style="{StaticResource BtnPrimary}" Command="{Binding SaveCommand}" Margin="0,0,6,0">
+                        <TextBlock Text="保存 / Save" Foreground="{DynamicResource TextOnAccent}"
+                                   VerticalAlignment="Center" />
                     </Button>
-                    <Button Style="{StaticResource AppActionButton}" Command="{Binding CloseCommand}" IsCancel="True">
+                    <Button Style="{StaticResource BtnGhost}" Command="{Binding CloseCommand}" IsCancel="True">
                         <TextBlock Text="关闭 / Close" VerticalAlignment="Center" />
                     </Button>
                 </StackPanel>
             </DockPanel>
-        </materialDesign:Card>
+        </Border>
 
-        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="2,0,2,0">
-            <StackPanel>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="18,16,18,18">
 
-                <materialDesign:Card Style="{StaticResource AppCard}">
-                    <StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <materialDesign:PackIcon Kind="FormatFont" VerticalAlignment="Center" Margin="0,0,8,0" />
-                            <TextBlock Text="字幕字体 / Subtitle font" FontWeight="SemiBold" VerticalAlignment="Center" />
-                        </StackPanel>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource AppFieldLabel}"
-                                       Text="字体 / Family:" Margin="0,0,10,14" />
-                            <ComboBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,14" IsEditable="True"
-                                      materialDesign:HintAssist.Hint="字体"
-                                      materialDesign:HintAssist.IsFloating="True"
-                                      ItemsSource="{Binding AvailableFontFamilies}"
-                                      Text="{Binding SubtitleFontFamily, UpdateSourceTrigger=PropertyChanged}" />
-                            <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource AppFieldLabel}"
-                                       Text="字号 / Size:" />
-                            <TextBox Grid.Row="1" Grid.Column="1" Width="110" HorizontalAlignment="Left"
-                                     materialDesign:HintAssist.Hint="pt"
-                                     materialDesign:HintAssist.IsFloating="True"
-                                     Text="{Binding SubtitleFontSize}" />
-                        </Grid>
-                    </StackPanel>
-                </materialDesign:Card>
+                <!-- ===== 字幕字体 / Subtitle font ===== -->
+                <TextBlock Text="字幕字体 / Subtitle font" FontWeight="SemiBold" Margin="0,0,0,10" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
 
-                <materialDesign:Card Style="{StaticResource AppCard}">
-                    <StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                            <materialDesign:PackIcon Kind="PictureInPictureBottomRight" VerticalAlignment="Center"
-                                                     Margin="0,0,8,0" />
-                            <TextBlock Text="悬浮字幕 / Floating subtitles" FontWeight="SemiBold"
-                                       VerticalAlignment="Center" />
-                        </StackPanel>
-                        <TextBlock Text="字号 / Font size:" Style="{StaticResource AppCaption}" Margin="0,6,0,2" />
-                        <Slider Minimum="12" Maximum="96" TickFrequency="2" IsSnapToTickEnabled="True"
-                                Value="{Binding FloatingFontSize}" />
-                        <TextBlock Text="背景不透明度 / Background opacity:" Style="{StaticResource AppCaption}"
-                                   Margin="0,8,0,2" />
-                        <Slider Minimum="0.1" Maximum="1.0" TickFrequency="0.05" IsSnapToTickEnabled="True"
-                                Value="{Binding FloatingBackgroundOpacity}" />
-                        <CheckBox Content="鼠标穿透 / Click-through (可从托盘菜单关闭)" Margin="0,12,0,0"
-                                  IsChecked="{Binding FloatingClickThrough}" />
-                    </StackPanel>
-                </materialDesign:Card>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="字体 / Family:" VerticalAlignment="Center"
+                               Margin="0,0,10,12" />
+                    <ComboBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,12" IsEditable="True"
+                              ItemsSource="{Binding AvailableFontFamilies}"
+                              Text="{Binding SubtitleFontFamily, UpdateSourceTrigger=PropertyChanged}" />
 
-                <materialDesign:Card Style="{StaticResource AppCard}">
-                    <StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <materialDesign:PackIcon Kind="Microphone" VerticalAlignment="Center" Margin="0,0,8,0" />
-                            <TextBlock Text="识别 / Recognition" FontWeight="SemiBold" VerticalAlignment="Center" />
-                        </StackPanel>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource AppFieldLabel}"
-                                       Text="线程数 / ASR threads:" Margin="0,0,10,16" />
-                            <TextBox Grid.Row="0" Grid.Column="1" Width="110" HorizontalAlignment="Left"
-                                     Margin="0,0,0,16"
-                                     materialDesign:HintAssist.Hint="0 = auto"
-                                     materialDesign:HintAssist.IsFloating="True"
-                                     Text="{Binding AsrNumThreads}" />
-                            <CheckBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
-                                      Content="启用静音分段（离线模型）/ Enable VAD segmenting (offline models)"
-                                      IsChecked="{Binding EnableVadSegmenting}" />
-                        </Grid>
-                    </StackPanel>
-                </materialDesign:Card>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="字号 / Size:" VerticalAlignment="Center"
+                               Margin="0,0,10,0" />
+                    <TextBox Grid.Row="1" Grid.Column="1" Width="110" HorizontalAlignment="Left"
+                             Text="{Binding SubtitleFontSize}" />
+                </Grid>
 
-                <materialDesign:Card Style="{StaticResource AppCard}">
-                    <StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                            <materialDesign:PackIcon Kind="Tune" VerticalAlignment="Center" Margin="0,0,8,0" />
-                            <TextBlock Text="行为 / Behaviour" FontWeight="SemiBold" VerticalAlignment="Center" />
-                        </StackPanel>
-                        <CheckBox Content="关闭窗口时最小化到托盘 / Minimize to tray on close"
-                                  IsChecked="{Binding MinimizeToTrayOnClose}" />
-                        <CheckBox Content="自动滚动到最新字幕 / Auto-scroll to newest" Margin="0,6,0,0"
-                                  IsChecked="{Binding AutoScrollEnabled}" />
-                        <CheckBox Content="导出时包含时间戳 / Include timestamps when exporting" Margin="0,6,0,0"
-                                  IsChecked="{Binding ExportIncludeTimestamps}" />
-                    </StackPanel>
-                </materialDesign:Card>
+                <Border Height="1" Background="{DynamicResource BorderDefault}" Margin="0,16" />
 
-                <materialDesign:Card Style="{StaticResource AppCard}" Margin="12,6,12,14">
-                    <StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <materialDesign:PackIcon Kind="TextRecognition" VerticalAlignment="Center"
-                                                     Margin="0,0,8,0" />
-                            <TextBlock Text="热词 / Hotwords (每行一个 / one per line)" FontWeight="SemiBold"
-                                       VerticalAlignment="Center" />
-                        </StackPanel>
-                        <TextBox Text="{Binding HotwordsText, UpdateSourceTrigger=PropertyChanged}"
-                                 AcceptsReturn="True" Height="130" VerticalScrollBarVisibility="Auto"
-                                 TextWrapping="NoWrap" FontFamily="Consolas"
-                                 VerticalContentAlignment="Top" Padding="6,4" />
-                        <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Style="{StaticResource AppCaption}"
-                                   Text="保存后会重新加载热词；若正在转写，将从下一句话开始生效。/ Saving reloads hotwords; if transcribing, they apply from the next utterance." />
-                    </StackPanel>
-                </materialDesign:Card>
+                <!-- ===== 悬浮字幕 / Floating subtitles ===== -->
+                <TextBlock Text="悬浮字幕 / Floating subtitles" FontWeight="SemiBold" Margin="0,0,0,10" />
+                <TextBlock Text="字号 / Font size:" FontSize="12" Foreground="{DynamicResource TextMuted}"
+                           Margin="0,0,0,2" />
+                <Slider Minimum="12" Maximum="96" TickFrequency="2" IsSnapToTickEnabled="True"
+                        Value="{Binding FloatingFontSize}" />
+                <TextBlock Text="背景不透明度 / Background opacity:" FontSize="12"
+                           Foreground="{DynamicResource TextMuted}" Margin="0,10,0,2" />
+                <Slider Minimum="0.1" Maximum="1.0" TickFrequency="0.05" IsSnapToTickEnabled="True"
+                        Value="{Binding FloatingBackgroundOpacity}" />
+                <CheckBox Content="鼠标穿透 / Click-through (可从托盘菜单关闭)" Margin="0,12,0,0"
+                          IsChecked="{Binding FloatingClickThrough}" />
+
+                <Border Height="1" Background="{DynamicResource BorderDefault}" Margin="0,16" />
+
+                <!-- ===== 识别 / Recognition ===== -->
+                <TextBlock Text="识别 / Recognition" FontWeight="SemiBold" Margin="0,0,0,10" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="线程数 / ASR threads:" VerticalAlignment="Center"
+                               Margin="0,0,10,14" />
+                    <TextBox Grid.Row="0" Grid.Column="1" Width="110" HorizontalAlignment="Left" Margin="0,0,0,14"
+                             Text="{Binding AsrNumThreads}" />
+
+                    <CheckBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                              Content="启用静音分段（离线模型）/ Enable VAD segmenting (offline models)"
+                              IsChecked="{Binding EnableVadSegmenting}" />
+                </Grid>
+
+                <Border Height="1" Background="{DynamicResource BorderDefault}" Margin="0,16" />
+
+                <!-- ===== 行为 / Behaviour ===== -->
+                <TextBlock Text="行为 / Behaviour" FontWeight="SemiBold" Margin="0,0,0,10" />
+                <CheckBox Content="关闭窗口时最小化到托盘 / Minimize to tray on close"
+                          IsChecked="{Binding MinimizeToTrayOnClose}" />
+                <CheckBox Content="自动滚动到最新字幕 / Auto-scroll to newest" Margin="0,8,0,0"
+                          IsChecked="{Binding AutoScrollEnabled}" />
+                <CheckBox Content="导出时包含时间戳 / Include timestamps when exporting" Margin="0,8,0,0"
+                          IsChecked="{Binding ExportIncludeTimestamps}" />
+
+                <Border Height="1" Background="{DynamicResource BorderDefault}" Margin="0,16" />
+
+                <!-- ===== 外观 / Appearance ===== -->
+                <TextBlock Text="外观 / Appearance" FontWeight="SemiBold" Margin="0,0,0,10" />
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="主题 / Theme:" VerticalAlignment="Center" Margin="0,0,10,0" />
+                    <ComboBox Width="170" SelectedValue="{Binding Theme}" SelectedValuePath="Tag">
+                        <ComboBoxItem Content="浅色 / Light" Tag="Light" />
+                        <ComboBoxItem Content="深色 / Dark" Tag="Dark" />
+                    </ComboBox>
+                </StackPanel>
+
+                <Border Height="1" Background="{DynamicResource BorderDefault}" Margin="0,16" />
+
+                <!-- ===== 热词 / Hotwords ===== -->
+                <TextBlock Text="热词 / Hotwords (每行一个 / one per line)" FontWeight="SemiBold"
+                           Margin="0,0,0,10" />
+                <TextBox Text="{Binding HotwordsText, UpdateSourceTrigger=PropertyChanged}"
+                         AcceptsReturn="True" Height="130" VerticalScrollBarVisibility="Auto"
+                         TextWrapping="NoWrap" FontFamily="Consolas"
+                         VerticalContentAlignment="Top" />
+                <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" FontSize="12"
+                           Foreground="{DynamicResource TextMuted}"
+                           Text="保存后会重新加载热词；若正在转写，将从下一句话开始生效。/ Saving reloads hotwords; if transcribing, they apply from the next utterance." />
 
             </StackPanel>
         </ScrollViewer>

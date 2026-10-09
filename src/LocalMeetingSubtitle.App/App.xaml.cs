@@ -74,6 +74,9 @@ public partial class App : Application
             return;
         }
 
+        // Apply the persisted theme before the first window is shown so there is no light flash.
+        ApplyStartupTheme();
+
         _logger.Info("Services built; creating shell.");
         _shell = new ShellService(_logger, CreateSettingsViewModel, RequestExit,
             (title, message) => _tray?.ShowBalloon(title, message));
@@ -128,6 +131,26 @@ public partial class App : Application
             _logger?.Error("Startup initialization failed", ex);
             MessageBox.Show("初始化失败 / Initialization failed:\n" + ex.Message,
                 "LocalMeetingSubtitle", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    /// <summary>
+    /// Reads the persisted <see cref="Core.Models.AppSettings.Theme"/> (bringing the schema up first)
+    /// and applies it. Falls back to Light on any failure.
+    /// </summary>
+    private void ApplyStartupTheme()
+    {
+        try
+        {
+            // The settings row lives in SQLite; ensure the schema exists before reading it.
+            _services!.GetRequiredService<SqliteDatabase>().InitializeAsync().GetAwaiter().GetResult();
+            var settings = _services!.GetRequiredService<ISettingsRepository>().LoadAsync().GetAwaiter().GetResult();
+            ThemeManager.Apply(settings.Theme);
+        }
+        catch (Exception ex)
+        {
+            _logger?.Warn($"Applying the persisted theme failed; using Light. {ex.Message}");
+            ThemeManager.Apply(ThemeManager.Light);
         }
     }
 

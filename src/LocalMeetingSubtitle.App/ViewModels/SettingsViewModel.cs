@@ -75,6 +75,23 @@ public sealed class SettingsViewModel : ObservableObject
     private string _hotwordsText = "";
     public string HotwordsText { get => _hotwordsText; set => SetProperty(ref _hotwordsText, value); }
 
+    private string _theme = ThemeManager.Light;
+    /// <summary>"Light" or "Dark" — applied live (preview) and persisted with the other settings.</summary>
+    public string Theme
+    {
+        get => _theme;
+        set
+        {
+            var normalized = string.Equals(value, ThemeManager.Dark, StringComparison.OrdinalIgnoreCase)
+                ? ThemeManager.Dark
+                : ThemeManager.Light;
+            if (SetProperty(ref _theme, normalized))
+            {
+                ThemeManager.Apply(normalized);
+            }
+        }
+    }
+
     private string _statusMessage = "";
     public string StatusMessage
     {
@@ -109,6 +126,7 @@ public sealed class SettingsViewModel : ObservableObject
         AutoScrollEnabled = _settings.AutoScrollEnabled;
         ExportIncludeTimestamps = _settings.ExportIncludeTimestamps;
         EnableVadSegmenting = _settings.EnableVadSegmenting;
+        Theme = string.IsNullOrWhiteSpace(_settings.Theme) ? ThemeManager.Light : _settings.Theme;
 
         try
         {
@@ -135,6 +153,7 @@ public sealed class SettingsViewModel : ObservableObject
             _settings.AutoScrollEnabled = AutoScrollEnabled;
             _settings.ExportIncludeTimestamps = ExportIncludeTimestamps;
             _settings.EnableVadSegmenting = EnableVadSegmenting;
+            _settings.Theme = Theme;
 
             await _settingsRepository.SaveAsync(_settings).ConfigureAwait(true);
 

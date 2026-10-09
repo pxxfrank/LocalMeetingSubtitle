@@ -8,22 +8,22 @@ obj/
 .vs/
 
 # Test results
-TestResults/
+/TestResults/
 *.trx
 *.coverage
-coverage/
+/coverage/
 
-# Local models (downloaded at dev time, shipped separately / in dist)
-models/
-!models/README.md
+# Locally downloaded ASR models (root-anchored! an unanchored "models/" would also
+# ignore src/LocalMeetingSubtitle.Core/Models/ because git is case-insensitive on Windows).
+/models/
 
 # Distribution artifacts
-dist/
-artifacts/
+/dist/
+/artifacts/
 
 # Local runtime data
-data/
-logs/
+/data/
+/logs/
 *.log
 
 # WiX generated component list (contains absolute paths; regenerated per machine)

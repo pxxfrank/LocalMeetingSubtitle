@@ -15,6 +15,9 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 | P1 | Installer flattened the folder tree (`models\` lost, 238 files silently dropped) | High (release) | **FIXED** + re-verified 519/519 files |
 | P2 | `MaterialDesignVerticalSeparator` does not exist in MaterialDesignThemes 5.3.2 | Medium (UI) | **FIXED** |
 | P1 | Signed Burn `Setup.exe` could not install (0x80070002 — container lost) | High (release) | **FIXED** (bundle intentionally unsigned; MSI + app exe stay signed) |
+| P0 | `.gitignore`'s unanchored `models/` rule also ignored `src/...Core/Models/` (git is case-insensitive on Windows), so the 4 Core model files were **absent from the public repo** | Critical (repo would not build from a clone) | **FIXED** — rule anchored to `/models/`, files committed |
+| P1 | `Controls.xaml` used `{StaticResource IconChevronDown}` before `Icons.xaml` was merged → main window failed to load | High (UI) | **FIXED** (`DynamicResource`) |
+| P2 | Dark theme: stock Aero2 ComboBox/TextBox templates paint a hardcoded white background and ignore `Background`/`SystemColors`, making the text invisible | Medium (UI) | **FIXED** (explicit themed templates) |
 | P3-1 | Subtitle selection is row-level, not character-level | Low | Open |
 | P3-2 | `AppSettings.EnableVadSegmenting` persisted but not wired | Low | Open |
 | P3-3 | `AsrNumThreads` applies at next Start / engine swap, not live | Low | Open |

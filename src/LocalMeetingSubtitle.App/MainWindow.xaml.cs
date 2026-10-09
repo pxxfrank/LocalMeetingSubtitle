@@ -80,6 +80,8 @@ public partial class MainWindow : Window
         _vm.IsTailLocked = atBottom;
     }
 
+    private void OnToggleThemeClick(object sender, RoutedEventArgs e) => _vm?.ToggleTheme();
+
     private void OnCopyClick(object sender, RoutedEventArgs e)
     {
         if (_vm is null) return;

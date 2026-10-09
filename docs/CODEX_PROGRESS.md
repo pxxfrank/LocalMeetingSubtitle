@@ -184,3 +184,29 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
   Authenticode appends the signature at the end of the PE file and corrupts Burn's container location.
   `build-installer.ps1` no longer signs the bundle (the MSI and app exe stay signed). Re-verified:
   `Setup.exe /quiet` → exit 0, 519/519 files, model found, Start-menu shortcut created.
+
+## Update — Claude-style UI, dark mode, icons; repo-completeness fix (2026-10-09)
+
+- **UI rebuilt to a minimal "Claude (Anthropic)" style** and **MaterialDesignThemes removed entirely**
+  (no third-party UI framework). New `src/LocalMeetingSubtitle.App/Theme/`:
+  `Claude.Light.xaml` / `Claude.Dark.xaml` (warm neutrals + coral `#C96442` / `#D97757` accent),
+  `Controls.xaml` (flat implicit styles), `Icons.xaml` (16 line-icon geometries, Lucide-derived),
+  plus `Infrastructure/ThemeManager.cs` for runtime switching. `AppSettings.Theme` persists the choice.
+- **Simplified layout:** the tall Material app bar is gone; the main window is now a slim 2-row header
+  (title, status pill, theme toggle, settings), a single toolbar (device + transport controls), the
+  subtitle list as the visual focus, and a slim footer. The duplicated model caption was removed.
+- **Dark mode** verified by sampling rendered pixels (input interior luminance ~48 with text pixels at 255).
+- **P0 repository defect found and fixed:** `.gitignore` had an unanchored `models/` rule. Because git is
+  case-insensitive on Windows, that also ignored `src/LocalMeetingSubtitle.Core/Models/` — the four Core
+  model files (`Primitives.cs`, `Entities.cs`, `AsrModels.cs`, `TranscriptModels.cs`) were **never
+  committed**, so a fresh clone of the public repo could not compile. The rule is now anchored (`/models/`)
+  and the files are committed.
+- **Two UI defects found and fixed while verifying dark mode:**
+  1. `Controls.xaml` referenced `{StaticResource IconChevronDown}` while `Icons.xaml` had not yet been
+     merged → `StaticResourceHolder` exception → the main window failed to create. Changed to
+     `{DynamicResource}`.
+  2. The stock WPF (Aero2) ComboBox/TextBox templates paint a **hardcoded white** background and ignore
+     `Background`/`SystemColors`, so dark mode showed light text on white. Replaced with explicit,
+     fully themed templates.
+- Version bumped to **0.3.0**; installers and the portable ZIP rebuilt and re-signed (bundle intentionally
+  unsigned, per the note above).

@@ -7,7 +7,7 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <InvariantGlobalization>false</InvariantGlobalization>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <Company>LocalMeetingSubtitle</Company>
     <Product>LocalMeetingSubtitle</Product>
     <Copyright>Copyright (c) 2026</Copyright>
