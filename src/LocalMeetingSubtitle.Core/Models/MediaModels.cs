@@ -51,5 +51,11 @@ public readonly record struct PcmBlock(float[] Samples, TimeSpan Start, int Samp
 /// <summary>
 /// Asks the decoder to stream one audio track of a local file as 16 kHz mono float32.
 /// A null <paramref name="AudioStreamIndex"/> selects the first audio stream.
+/// <paramref name="StartOffset"/> seeks into the stream (used to resume an interrupted job);
+/// emitted <see cref="PcmBlock.Start"/> values stay absolute on the media timeline.
 /// </summary>
-public sealed record MediaDecodeRequest(string Path, int? AudioStreamIndex = null, int TargetSampleRate = 16000);
+public sealed record MediaDecodeRequest(
+    string Path,
+    int? AudioStreamIndex = null,
+    int TargetSampleRate = 16000,
+    TimeSpan StartOffset = default);

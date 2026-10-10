@@ -68,6 +68,19 @@ public sealed class FFmpegMediaDecodeService : IMediaDecodeService
         var arguments = new List<string>
         {
             "-v", "error",
+            "-accurate_seek"
+        };
+
+        // Input seeking: accurate because we transcode, and O(1) rather than decoding-and-discarding
+        // the whole prefix of a multi-hour file.
+        if (request.StartOffset > TimeSpan.Zero)
+        {
+            arguments.Add("-ss");
+            arguments.Add(request.StartOffset.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture));
+        }
+
+        arguments.AddRange(new[]
+        {
             "-i", info.Path,
             "-map", $"0:a:{ordinal}",
             "-vn", "-sn", "-dn",
@@ -76,9 +89,10 @@ public sealed class FFmpegMediaDecodeService : IMediaDecodeService
             "-ac", "1",
             "-ar", sampleRate.ToString(CultureInfo.InvariantCulture),
             "pipe:1"
-        };
+        });
 
-        _log.Debug($"Decoding '{info.FileName}' (stream 0:a:{ordinal}) as {sampleRate} Hz mono float32.");
+        _log.Debug($"Decoding '{info.FileName}' (stream 0:a:{ordinal}) as {sampleRate} Hz mono float32"
+            + (request.StartOffset > TimeSpan.Zero ? $", from {request.StartOffset.TotalSeconds:F3}s" : "") + ".");
 
         var channel = Channel.CreateBounded<PcmBlock>(new BoundedChannelOptions(ChannelCapacity)
         {
@@ -90,7 +104,7 @@ public sealed class FFmpegMediaDecodeService : IMediaDecodeService
         // A linked source lets an abandoned enumeration (dispose without cancellation) also stop ffmpeg.
         using var decodeCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-        var pump = PumpAsync(arguments, sampleRate, channel.Writer, decodeCancellation.Token);
+        var pump = PumpAsync(arguments, sampleRate, request.StartOffset, channel.Writer, decodeCancellation.Token);
         // Surface the pump's outcome through the channel so the reader sees mapped failures and terminates.
         _ = pump.ContinueWith(
             static (finished, state) =>
@@ -125,6 +139,7 @@ public sealed class FFmpegMediaDecodeService : IMediaDecodeService
     private async Task PumpAsync(
         IReadOnlyList<string> arguments,
         int sampleRate,
+        TimeSpan startOffset,
         ChannelWriter<PcmBlock> writer,
         CancellationToken cancellationToken)
     {
@@ -133,7 +148,7 @@ public sealed class FFmpegMediaDecodeService : IMediaDecodeService
             var result = await ProcessRunner.RunBinaryAsync(
                 _tools.FfmpegPath,
                 arguments,
-                (stream, token) => PumpBlocksAsync(stream, sampleRate, writer, token),
+                (stream, token) => PumpBlocksAsync(stream, sampleRate, startOffset, writer, token),
                 cancellationToken).ConfigureAwait(false);
 
             if (cancellationToken.IsCancellationRequested)
@@ -160,6 +175,7 @@ public sealed class FFmpegMediaDecodeService : IMediaDecodeService
     private static async Task PumpBlocksAsync(
         Stream stdout,
         int sampleRate,
+        TimeSpan startOffset,
         ChannelWriter<PcmBlock> writer,
         CancellationToken cancellationToken)
     {
@@ -193,7 +209,7 @@ public sealed class FFmpegMediaDecodeService : IMediaDecodeService
                     block[blockCount++] = floats[i];
                     if (blockCount == BlockSamples)
                     {
-                        await EmitBlockAsync(writer, block, BlockSamples, totalSamples, sampleRate, cancellationToken)
+                        await EmitBlockAsync(writer, block, BlockSamples, totalSamples, sampleRate, startOffset, cancellationToken)
                             .ConfigureAwait(false);
                         totalSamples += BlockSamples;
                         blockCount = 0;
@@ -214,7 +230,7 @@ public sealed class FFmpegMediaDecodeService : IMediaDecodeService
 
         if (blockCount > 0)
         {
-            await EmitBlockAsync(writer, block, blockCount, totalSamples, sampleRate, cancellationToken)
+            await EmitBlockAsync(writer, block, blockCount, totalSamples, sampleRate, startOffset, cancellationToken)
                 .ConfigureAwait(false);
         }
     }
@@ -225,11 +241,15 @@ public sealed class FFmpegMediaDecodeService : IMediaDecodeService
         int count,
         long totalSamplesBefore,
         int sampleRate,
+        TimeSpan startOffset,
         CancellationToken cancellationToken)
     {
         var samples = new float[count];
         Array.Copy(block, samples, count);
-        var pcmBlock = new PcmBlock(samples, TimeSpan.FromSeconds((double)totalSamplesBefore / sampleRate), sampleRate);
+        // Keep the position absolute on the media timeline so a seeked decode lines up with the
+        // segments already committed before the resume point.
+        var start = startOffset + TimeSpan.FromSeconds((double)totalSamplesBefore / sampleRate);
+        var pcmBlock = new PcmBlock(samples, start, sampleRate);
         await writer.WriteAsync(pcmBlock, cancellationToken).ConfigureAwait(false);
     }
 }

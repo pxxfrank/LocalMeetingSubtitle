@@ -141,6 +141,16 @@ public partial class App : Application
         {
             // Bring the schema up to date before any repository read/write.
             await _services!.GetRequiredService<SqliteDatabase>().InitializeAsync().ConfigureAwait(true);
+
+            // A job left running by a previous session is marked interrupted so it is visible and
+            // resumable instead of silently stuck.
+            var recovered = await _services.GetRequiredService<ITranscriptionJobService>()
+                .RecoverUnfinishedAsync().ConfigureAwait(true);
+            if (recovered > 0)
+            {
+                _logger?.Warn($"{recovered} file transcription job(s) were interrupted by a previous session.");
+            }
+
             await _mainViewModel!.InitializeAsync().ConfigureAwait(true);
         }
         catch (Exception ex)
@@ -299,7 +309,70 @@ public partial class App : Application
             LocalDataPaths.RecordingsDirectory,
             sp.GetRequiredService<IAppLogger>()));
 
+        // ---- V0.5 file transcription (Phase 4: job queue + checkpoint/resume) ----
+        services.AddSingleton<IMediaFileRepository>(sp => new SqliteMediaFileRepository(sp.GetRequiredService<SqliteDatabase>()));
+        services.AddSingleton<ITranscriptionJobRepository>(sp => new SqliteTranscriptionJobRepository(sp.GetRequiredService<SqliteDatabase>()));
+        services.AddSingleton<ITranscriptionJobService>(sp => new TranscriptionJobService(
+            sp.GetRequiredService<IFileTranscriptionService>(),
+            sp.GetRequiredService<ITranscriptionJobRepository>(),
+            sp.GetRequiredService<IMediaFileRepository>(),
+            sp.GetRequiredService<ISubtitleRepository>(),
+            (job, cancellationToken) => ResolveJobRequestAsync(sp, job, cancellationToken),
+            sp.GetRequiredService<IAppLogger>()));
+
         return services.BuildServiceProvider();
+    }
+
+    /// <summary>
+    /// Rebuilds the runnable request for a queued or resumed job: resolves the mode, creates a fresh
+    /// recognizer for this attempt (the job service disposes it) and points the run at the job's
+    /// existing session so it continues from the last committed segment.
+    /// </summary>
+    private static async Task<FileTranscriptionRequest> ResolveJobRequestAsync(
+        IServiceProvider services,
+        TranscriptionJob job,
+        CancellationToken cancellationToken)
+    {
+        var mediaFiles = services.GetRequiredService<IMediaFileRepository>();
+        var media = await mediaFiles.GetAsync(job.MediaFileId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Media file {job.MediaFileId} for job {job.JobId} is missing.");
+
+        string? hotwordsFile = null;
+        try
+        {
+            hotwordsFile = services.GetRequiredService<IHotwordService>()
+                .WriteModelHotwordFile(ModelHotwordFile.DefaultTempPath);
+        }
+        catch (Exception ex)
+        {
+            services.GetRequiredService<IAppLogger>().Warn($"No hotwords file for job {job.JobId}: {ex.Message}");
+        }
+
+        var resolved = TranscriptionModeCatalog.Resolve(job.Mode, services.GetRequiredService<IModelManager>(), hotwordsFile);
+        if (!resolved.IsAvailable)
+        {
+            throw new InvalidOperationException(resolved.UnavailableReason ?? "The model for this job is not installed.");
+        }
+
+        var engine = services.GetRequiredService<Func<IAsrEngine>>()();
+        var init = await engine.InitializeAsync(resolved.EngineOptions, cancellationToken).ConfigureAwait(false);
+        if (!init.Ok)
+        {
+            engine.Dispose();
+            throw new InvalidOperationException(init.Message);
+        }
+
+        return new FileTranscriptionRequest(
+            media.Path,
+            engine,
+            resolved.TranscriptionOptions,
+            job.AudioStreamIndex,
+            job.RunDiarization,
+            job.DiarizationCountMode,
+            job.ManualSpeakerCount,
+            job.ClusteringThreshold,
+            Title: job.Title,
+            SessionId: job.SessionId);
     }
 
     private void RegisterExceptionHandlers()

@@ -9,6 +9,9 @@ hardware. **V0.5 Phase 2 added four fixed defects (two P1, two P2) and one P2 th
 **V0.5 Phase 3 (role-tagged dialogue) added no code defect; it introduces three open limitations
 (P3-17 duration/memory of whole-file diarization, P3-18 a stale temp WAV after a crash, and P3-19 a
 pre-existing V0.4 cosmetic progress item).**
+**V0.5 Phase 4 (job queue + checkpoint/resume) added no new code defect; it introduces one open
+**P2** (P3-20, a segment at a resume boundary whose text can differ from an uninterrupted run) and
+six open P3 items (P3-21 .. P3-26), and it supersedes P3-14 (Phase 4 is now implemented).**
 
 ## Summary
 
@@ -42,12 +45,19 @@ pre-existing V0.4 cosmetic progress item).**
 | P3-11 | Built-in lexicon: the bundled zh-14M model cannot encode several lexicon terms | Low | Open |
 | P3-12 | Bundled FFmpeg is LGPL (decode-only): no libx264, so H.264 **encoding** is unavailable | Low | Open (harmless — 字幕君 only decodes) |
 | P3-13 | FFmpeg not yet bundled into the installer / portable ZIP | Low | Open → V0.5 Phase 8 |
-| P3-14 | File transcription Phases 4–8 not implemented | Low | Open |
+| P3-14 | File transcription Phases 5–8 not implemented (Phase 4 is now done) | Low | Open |
 | P3-15 | No `AGENTS.md` in the repo (the V0.5 spec's session-startup ritual references it) | Low | Open |
 | P3-16 | No reference transcript → file-transcription CER/WER not measured | Low | Open |
 | P3-17 | Whole-file diarization: 4 h cap + ~1.8 GB transient at 4 h; files > 2 h risky | Medium | Open |
 | P3-18 | A crash mid-job leaves the temporary diarization WAV until the next app start | Low | Open |
 | P3-19 | `DiarizationProgress.Fraction` renders `0.0` throughout a run (pre-existing V0.4 cosmetic) | Low | Open |
+| P3-20 | A segment produced at a **resume boundary** can have different text from an uninterrupted run (structure/count/timing identical) | **P2** | Open |
+| P3-21 | mp3 seeking is not sample-exact (decoder delay, tens of ms); WAV/PCM seeking is bit-exact | Low | Open |
+| P3-22 | The worker's `BelowNormal` priority is **aspirational** (continuations run on the thread pool after the first `await`) | Low | Open |
+| P3-23 | A **resumed** job performs one extra decode-only pass to rebuild the whole-file diarization WAV | Low | Open |
+| P3-24 | The job row's `ProcessedMs` is a throttled (≥ 2 s) **display** snapshot, never the resume cursor | Low | Open |
+| P3-25 | Whole-file diarization is unchanged from Phase 3 (same as P3-17) | Low | Open |
+| P3-26 | Still no UI for file transcription (Phase 5); `EnableVadSegmenting` unwired (same as P3-2) | Low | Open |
 | BLOCKED-1 | Full Start→transcribe→persist UI path | P0 | **CLOSED (2026-10-09, dev host)** — a UI-driven Start on the published build produced and persisted real subtitles |
 | BLOCKED-2 | No real-meeting 3-hour stability run | P0 (target) | Blocked (`ThreeHourSoak` never executed) |
 | BLOCKED-3 | Installer signature is self-signed / untrusted | P1 (release) | Partial (MSI + Setup.exe produced & signed; no CA-issued certificate) |
@@ -331,15 +341,15 @@ for this state.
   `third_party/ffmpeg` next to the app **when present**.
 - **Planned:** V0.5 Phase 8 (bundle FFmpeg into the release artifacts).
 
-#### P3-14 — File transcription Phases 4–8 not implemented
+#### P3-14 — File transcription Phases 5–8 not implemented
 
-- **Impact:** Phases 0–3 exist (media decode, segmented offline ASR, role-tagged dialogue). There is
-  still **no** `ITranscriptionJobService`, **no** migration-5 tables
-  (`MediaFile`/`TranscriptionJob`/`TranscriptionChunk`/`TranscriptSegment`/`JobCheckpoint`), **no**
-  DOCX export, **no** dialogue editor UI, and **no** player/drag-drop. The database schema is still at
-  **migration 4**.
-- **Workaround:** none — the feature is not wired into the app; this is in-progress work.
-- **Planned:** Phases 4–8 (see [`ARCHITECTURE_V05.md`](ARCHITECTURE_V05.md)); per-item status in
+- **Impact:** Phases 0–4 exist (media decode, segmented offline ASR, role-tagged dialogue, and the
+  job queue + checkpoint/resume with migration 5). There is still **no** DOCX export, **no** dialogue
+  editor UI, and **no** player/drag-drop. The database schema is now at **migration 5**
+  (`media_files` / `transcription_jobs`; see [`ARCHITECTURE_V05.md`](ARCHITECTURE_V05.md) §5 and
+  [`DECISIONS.md`](DECISIONS.md) D17).
+- **Workaround:** none — the file job is still **not** wired into the app UI (only `tools/FileTranscribe`).
+- **Planned:** Phases 5–8 (see [`ARCHITECTURE_V05.md`](ARCHITECTURE_V05.md)); per-item status in
   [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) (FT-01 .. FT-25).
 
 #### P3-15 — No `AGENTS.md` in the repository
@@ -394,6 +404,79 @@ for this state.
   the V0.4 diarization service unchanged.
 - **Workaround:** show indeterminate progress (a busy indicator) rather than a percentage.
 - **Not fixed:** explicitly out of scope for Phase 3.
+
+### V0.5 Phase 4 — open limitations
+
+Phase 4 adds the **job queue + checkpoint/resume** (migration 5). It introduces no new code defect; the
+following are known and accepted for this state.
+
+#### P3-20 — A segment at a resume boundary can differ from an uninterrupted run *(OPEN, P2 — medium)*
+
+- **Impact:** the first segment produced **immediately after a resume** can be transcribed slightly
+  differently from an uninterrupted run, because the VAD/recognizer restarts there with different
+  leading context. Observed on the two-speaker fixture: the uninterrupted run produced `四次班年度演。`
+  for that window while the resumed run produced `年度演。`.
+- **What is *not* affected:** segment **count, ordering, sequence numbers and timing are preserved**,
+  and nothing is duplicated. The transcript is **structurally identical**; it is **not** textually
+  identical — every segment **except the one at the resume boundary** matches exactly. Do **not** read
+  this as "the resumed transcript is identical to the original".
+- **Workaround:** none; the resumed transcript is usable and the timeline stays correct. This is a
+  property of restarting the VAD/recognizer at an arbitrary offset.
+- **Not fixed:** inherent to resuming a streaming recognizer at a non-zero offset.
+
+#### P3-21 — mp3 seeking is not sample-exact *(OPEN, low)*
+
+- **Impact:** the resume seek uses ffmpeg input seeking (`-ss` before `-i`, `-accurate_seek`). For
+  **WAV/PCM** this is **bit-exact** (verified: mean sample difference < 1e-6); for **mp3** it is **not**
+  sample-exact (decoder delay, tens of ms).
+- **Why it is harmless:** the emitted `PcmBlock.Start` positions stay **absolute** on the media
+  timeline either way, so segment timestamps remain correct.
+- **Workaround:** none needed.
+
+#### P3-22 — The worker's below-normal thread priority is aspirational *(OPEN, low)*
+
+- **Impact:** `TranscriptionJobService` creates its worker with
+  `Thread { IsBackground = true, Priority = ThreadPriority.BelowNormal, Name = "file-transcription-worker" }`,
+  but **after the first real `await` inside a run the continuations execute on the thread pool** — the
+  priority hint mainly covers process start-up, so the queued work is **not** guaranteed to stay at
+  below-normal priority end-to-end.
+- **Real isolation (unchanged):** **one job at a time**, low thread caps, and **separate ffmpeg child
+  processes**. The "below-normal priority" claim is **aspirational**, not a measured guarantee (see
+  [`ARCHITECTURE_V05.md`](ARCHITECTURE_V05.md) §7).
+
+#### P3-23 — A resumed job performs one extra decode-only pass *(OPEN, low)*
+
+- **Impact:** the whole-file staging WAV for diarization is tee'd only when the run starts at offset
+  zero. A **resumed** job **rebuilds** the whole-file WAV first with **one extra decode-only pass** (the
+  V0.4 diarizer is whole-file and NAudio cannot read video). A **fresh** job needs no extra pass.
+- **Workaround:** none needed (one extra pass over the file).
+- **See also:** [`DECISIONS.md`](DECISIONS.md) D19 and [`PERFORMANCE_REPORT.md`](PERFORMANCE_REPORT.md).
+
+#### P3-24 — `ProcessedMs` is a throttled display snapshot, never the resume cursor *(OPEN, low)*
+
+- **Impact:** the job row's `ProcessedMs` / `SegmentsEmitted` are written at most every **2 s** as a
+  **display** snapshot. They are **never** used to resume — the resume cursor is always derived from the
+  committed `segments` (`MAX(EndOffsetMs)`, `MAX(SequenceNumber)+1`; see [`DECISIONS.md`](DECISIONS.md)
+  D17). A progress bar driven by `ProcessedMs` can therefore lag the true committed state by up to ~2 s.
+- **Workaround:** treat the committed `segments` as the source of truth for resume/progress.
+
+#### P3-25 — Whole-file diarization is unchanged from Phase 3 *(OPEN, medium — same as P3-17)*
+
+- **Impact:** a file job still runs the **whole-file** V0.4 diarizer (cap **4 h**; `LoadMono` builds a
+  `List<float>` then `.ToArray()`, ≈ **1.8 GB** transient at 4 h; files **> 2 h** risky). Phase 4 did
+  **not** change this.
+- **Measured evidence:** Phase 4 exercised diarization only on the **14.1 s** two-speaker fixture (it ran
+  over the whole file — `225592 samples` — proving the WAV rebuild, but that is a short file); no long
+  file was diarized.
+- **Workaround:** see P3-17 (split very long recordings before diarizing).
+
+#### P3-26 — Still no UI for file transcription *(OPEN, low — same as P3-2 / P3-14)*
+
+- **Impact:** Phase 4 runs the queue through `tools/FileTranscribe --jobs` and the tests only; there is
+  **no UI** (the dialogue editor is Phase 5) and `AppSettings.EnableVadSegmenting` remains **unwired**
+  (P3-2). There is no progress/status UI for a queued or running job.
+- **Workaround:** use `tools/FileTranscribe --jobs [--list-jobs]` on the CLI; see
+  [`DEVELOPMENT.md`](DEVELOPMENT.md).
 
 ## Open defect (P2 — still open)
 

@@ -14,30 +14,28 @@ using LocalMeetingSubtitle.Storage;
 
 // FileTranscribe: decodes a local audio/video file with the bundled FFmpeg toolchain and transcribes it
 // offline with a real sherpa-onnx model, optionally offlining it into role-tagged dialogue. Used as
-// evidence for V0.5 Phases 2-3.
+// evidence for V0.5 Phases 2-4.
 //
 // Usage:
 //   FileTranscribe --file <path> [--mode fast|standard|high] [--models-root <path>] [--track N]
 //                  [--hotwords <file>] [--lexicon] [--diarize] [--out <path>] [--json]
+//   FileTranscribe --jobs [--file <path>] [--db <path>] [--interrupt-after N] [--resume-job <id>]
+//                  [--list-jobs] [--models-root <path>] [--diarize] [--json]
 
 var opts = CliArgs.Parse(args);
-if (opts.ContainsKey("help") || !opts.ContainsKey("file"))
+if (opts.ContainsKey("help") || (!opts.ContainsKey("file") && !opts.ContainsKey("jobs")))
 {
     Console.WriteLine("Usage: FileTranscribe --file <path> [--mode fast|standard|high] [--models-root <path>] "
         + "[--track N] [--hotwords <file>] [--lexicon] [--diarize] [--out <path>] [--json]");
+    Console.WriteLine("       FileTranscribe --jobs [--file <path>] [--db <path>] [--interrupt-after N] "
+        + "[--resume-job <id>] [--list-jobs]");
     return opts.ContainsKey("help") ? 0 : 2;
 }
 
-string file = opts["file"];
-if (!File.Exists(file))
+string? file = opts.GetValueOrDefault("file");
+if (file is not null && !File.Exists(file))
 {
     Console.Error.WriteLine($"ERROR: file not found: {file}");
-    return 2;
-}
-
-if (!TryParseMode(opts.GetValueOrDefault("mode") ?? "fast", out var mode))
-{
-    Console.Error.WriteLine("ERROR: --mode must be one of fast|standard|high.");
     return 2;
 }
 
@@ -52,8 +50,22 @@ string? outputPath = opts.GetValueOrDefault("out");
 bool json = opts.ContainsKey("json");
 
 var log = new ConsoleLogger();
-
 var modelManager = new HttpModelManager(modelsRoot);
+
+// ---- Phase 4: job queue + checkpoint/resume --------------------------------
+if (opts.ContainsKey("jobs"))
+{
+    return await RunJobQueueAsync();
+}
+
+if (!TryParseMode(opts.GetValueOrDefault("mode") ?? "fast", out var mode))
+{
+    Console.Error.WriteLine("ERROR: --mode must be one of fast|standard|high.");
+    return 2;
+}
+
+string input = file!;
+
 var resolved = TranscriptionModeCatalog.Resolve(mode, modelManager, hotwords);
 Console.WriteLine($"MODE={mode} DISPLAY={resolved.DisplayName} MODEL={resolved.Descriptor.Id} "
     + $"INSTALLED={resolved.IsAvailable}");
@@ -79,7 +91,7 @@ var media = new FFmpegMediaDecodeService(tools, log);
 MediaInfo info;
 try
 {
-    info = await media.ProbeAsync(file);
+    info = await media.ProbeAsync(input);
 }
 catch (MediaDecodeException ex)
 {
@@ -113,7 +125,8 @@ if (diarize)
         return 3;
     }
 
-    string dbPath = Path.Combine(Path.GetTempPath(), "ft-" + Guid.NewGuid().ToString("N") + ".db");
+    string dbPath = opts.GetValueOrDefault("db") ?? TempDbPath("ft");
+    bool deleteDb = !opts.ContainsKey("db");
     var database = new SqliteDatabase(dbPath);
 
     try
@@ -152,12 +165,12 @@ if (diarize)
 
         var result = await service.RunAsync(
             new FileTranscriptionRequest(
-                file,
+                input,
                 engine,
                 resolved.TranscriptionOptions,
                 track,
                 RunDiarization: true,
-                Title: Path.GetFileName(file)),
+                Title: Path.GetFileName(input)),
             progress,
             cts.Token);
 
@@ -184,9 +197,12 @@ if (diarize)
     finally
     {
         await database.DisposeAsync();
-        TryDelete(dbPath);
-        TryDelete(dbPath + "-wal");
-        TryDelete(dbPath + "-shm");
+        if (deleteDb)
+        {
+            TryDelete(dbPath);
+            TryDelete(dbPath + "-wal");
+            TryDelete(dbPath + "-shm");
+        }
     }
 }
 else
@@ -210,7 +226,7 @@ else
     try
     {
         result = await transcriber.TranscribeAsync(
-            media.DecodeAsync(new MediaDecodeRequest(file, track), cts.Token),
+            media.DecodeAsync(new MediaDecodeRequest(input, track), cts.Token),
             progress,
             info.Duration,
             cts.Token);
@@ -245,23 +261,14 @@ if (json)
     {
         mode = mode.ToString(),
         modelId = resolved.Descriptor.Id,
-        file,
+        file = input,
         diarized,
         audioSeconds = Math.Round(audioDuration.TotalSeconds, 3),
         elapsedSeconds = Math.Round(elapsed.TotalSeconds, 3),
         rtf = audioDuration.TotalSeconds > 0 ? Math.Round(elapsed.TotalSeconds / audioDuration.TotalSeconds, 4) : 0,
         completed,
         cancelled,
-        segments = segments.Select(s => new
-        {
-            start = s.Start.ToString(@"hh\:mm\:ss\.fff"),
-            end = s.End.ToString(@"hh\:mm\:ss\.fff"),
-            startMs = (long)s.Start.TotalMilliseconds,
-            endMs = (long)s.End.TotalMilliseconds,
-            chunkId = s.SourceChunkId,
-            modelId = s.ModelId,
-            text = s.Text
-        }),
+        segments = segments.Select(ProjectSegment),
         participants = dialogue?.Participants.Select(p => new
         {
             p.SpeakerId,
@@ -270,18 +277,7 @@ if (json)
             p.TurnCount,
             p.SegmentCount
         }),
-        turns = dialogue?.Turns.Select(t => new
-        {
-            speakerId = t.SpeakerId,
-            speaker = t.SpeakerName,
-            start = t.Start.ToString(@"hh\:mm\:ss\.fff"),
-            end = t.End.ToString(@"hh\:mm\:ss\.fff"),
-            startMs = (long)t.Start.TotalMilliseconds,
-            endMs = (long)t.End.TotalMilliseconds,
-            t.NeedsConfirmation,
-            segmentIds = t.SegmentIds,
-            text = t.Text
-        })
+        turns = dialogue?.Turns.Select(ProjectTurn)
     }, new JsonSerializerOptions { WriteIndented = true }));
 }
 else
@@ -332,6 +328,235 @@ if (outputPath is not null)
 }
 
 return 0;
+
+// ---- Phase 4: queue the file, run it, and optionally interrupt / resume it -------------------
+async Task<int> RunJobQueueAsync()
+{
+    bool listOnly = opts.ContainsKey("list-jobs");
+    string? resumeJob = opts.GetValueOrDefault("resume-job");
+    if (!listOnly && resumeJob is null && file is null)
+    {
+        Console.Error.WriteLine("ERROR: --jobs needs --file <path>, --resume-job <id> or --list-jobs.");
+        return 2;
+    }
+
+    var diarizationOptions = ResolveDiarizationOptions(modelsRoot);
+    if (diarizationOptions is null)
+    {
+        Console.Error.WriteLine("ERROR: diarization models are not present under models/.");
+        return 3;
+    }
+
+    int interruptAfter = opts.TryGetValue("interrupt-after", out var ia)
+        && int.TryParse(ia, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+        ? parsed
+        : 0;
+
+    using var jobCts = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) => { e.Cancel = true; jobCts.Cancel(); };
+
+    string dbPath = opts.GetValueOrDefault("db") ?? TempDbPath("ftjobs");
+    bool deleteDb = !opts.ContainsKey("db");
+    var database = new SqliteDatabase(dbPath);
+    Console.WriteLine($"DB={Path.GetFullPath(dbPath)}");
+
+    // Declared outside the try so the resolver local function below can capture them.
+    var subtitles = new SqliteSubtitleRepository(database);
+    var speakers = new SqliteSpeakerRepository(database);
+    var mediaFiles = new SqliteMediaFileRepository(database);
+    var jobs = new SqliteTranscriptionJobRepository(database);
+
+    try
+    {
+        await database.InitializeAsync();
+        var diarization = new SpeakerDiarizationService(
+            () => new SherpaOfflineSpeakerDiarizer(log),
+            new NaudioAudioFileLoader(),
+            new SpeakerAlignmentService(),
+            speakers,
+            subtitles,
+            diarizationOptions,
+            audioAssets: null,
+            log);
+        var jobMedia = new FFmpegMediaDecodeService(FFmpegLocator.Resolve(), log);
+        var fileService = new FileTranscriptionService(
+            media: jobMedia,
+            diarization: diarization,
+            subtitles: subtitles,
+            speakers: speakers,
+            alignment: new TranscriptAlignmentService(),
+            stagingDirectory: Path.GetTempPath(),
+            log: log);
+
+        await using var jobService = new TranscriptionJobService(fileService, jobs, mediaFiles, subtitles, ResolveJobRequestAsync, log);
+
+        int recovered = await jobService.RecoverUnfinishedAsync();
+        if (recovered > 0)
+        {
+            Console.WriteLine($"RECOVERED={recovered}");
+        }
+
+        if (listOnly)
+        {
+            PrintJobs(await jobService.GetJobsAsync());
+            return 0;
+        }
+
+        if (resumeJob is not null)
+        {
+            if (!await jobService.ResumeAsync(resumeJob))
+            {
+                Console.Error.WriteLine($"ERROR: job {resumeJob} cannot be resumed.");
+                return 2;
+            }
+
+            Console.WriteLine($"RESUMED={resumeJob}");
+        }
+        else
+        {
+            if (!TryParseMode(opts.GetValueOrDefault("mode") ?? "fast", out var jobMode))
+            {
+                Console.Error.WriteLine("ERROR: --mode must be one of fast|standard|high.");
+                return 2;
+            }
+
+            var modeChoice = TranscriptionModeCatalog.Resolve(jobMode, modelManager, hotwords);
+            if (!modeChoice.IsAvailable)
+            {
+                Console.Error.WriteLine($"ERROR: {modeChoice.UnavailableReason}");
+                return 3;
+            }
+
+            var probe = await jobMedia.ProbeAsync(file!);
+            var queued = await jobService.EnqueueAsync(
+                new TranscriptionJobRequest(
+                    file!,
+                    jobMode,
+                    modeChoice.Descriptor.Id,
+                    track,
+                    RunDiarization: diarize,
+                    Title: Path.GetFileName(file!)),
+                probe);
+            Console.WriteLine($"JOB={queued.JobId} STATUS={queued.Status}");
+        }
+
+        if (interruptAfter > 0)
+        {
+            int remaining = interruptAfter;
+            jobService.JobChanged += (_, job) =>
+            {
+                if (remaining > 0 && job.SegmentsEmitted >= remaining && !job.IsFinished)
+                {
+                    remaining = -1;
+                    Console.Error.WriteLine($"INTENTIONAL-INTERRUPT after {job.SegmentsEmitted} persisted segment(s).");
+                    _ = jobService.CancelAsync(job.JobId);
+                }
+            };
+        }
+
+        int processed = await jobService.DrainAsync(jobCts.Token);
+        Console.WriteLine($"DRAINED={processed}");
+        PrintJobs(await jobService.GetJobsAsync());
+
+        // Report the transcript of the newest session so the resume can be eyeballed.
+        foreach (var job in (await jobService.GetJobsAsync()).Where(j => j.SessionId is not null))
+        {
+            var stored = await subtitles.GetSegmentsAsync(job.SessionId!);
+            if (stored.Count == 0)
+            {
+                continue;
+            }
+
+            Console.WriteLine($"SESSION={job.SessionId} SEGMENTS={stored.Count}");
+            foreach (var segment in stored.OrderBy(s => s.SequenceNumber))
+            {
+                Console.WriteLine($"  #{segment.SequenceNumber} "
+                    + $"[{segment.StartOffset:hh\\:mm\\:ss\\.fff} - {segment.EndOffset:hh\\:mm\\:ss\\.fff}] {segment.DisplayText}");
+            }
+        }
+
+        return 0;
+    }
+    finally
+    {
+        await database.DisposeAsync();
+        if (deleteDb)
+        {
+            TryDelete(dbPath);
+            TryDelete(dbPath + "-wal");
+            TryDelete(dbPath + "-shm");
+        }
+    }
+
+    async Task<FileTranscriptionRequest> ResolveJobRequestAsync(TranscriptionJob job, CancellationToken token)
+    {
+        var record = await mediaFiles.GetAsync(job.MediaFileId, token)
+            ?? throw new InvalidOperationException($"Media file {job.MediaFileId} is missing.");
+
+        var modeChoice = TranscriptionModeCatalog.Resolve(job.Mode, modelManager, hotwords);
+        if (!modeChoice.IsAvailable)
+        {
+            throw new InvalidOperationException(modeChoice.UnavailableReason ?? "The model is not installed.");
+        }
+
+        var jobEngine = new SherpaOnnxAsrEngine(log);
+        var jobInit = await jobEngine.InitializeAsync(modeChoice.EngineOptions, token);
+        if (!jobInit.Ok)
+        {
+            jobEngine.Dispose();
+            throw new InvalidOperationException(jobInit.Message);
+        }
+
+        return new FileTranscriptionRequest(
+            record.Path,
+            jobEngine,
+            modeChoice.TranscriptionOptions,
+            job.AudioStreamIndex,
+            job.RunDiarization,
+            job.DiarizationCountMode,
+            job.ManualSpeakerCount,
+            job.ClusteringThreshold,
+            Title: job.Title,
+            SessionId: job.SessionId);
+    }
+}
+
+static void PrintJobs(IReadOnlyList<TranscriptionJob> jobs)
+{
+    foreach (var job in jobs)
+    {
+        Console.WriteLine($"JOB {job.JobId} {job.Status} segments={job.SegmentsEmitted} "
+            + $"processed={job.Processed.TotalSeconds:F1}/{job.Total.TotalSeconds:F1}s "
+            + $"attempts={job.Attempts} resumes={job.ResumeCount} session={job.SessionId} error={job.Error}");
+    }
+}
+
+static object ProjectSegment(OfflineTranscriptSegment segment) => new
+{
+    start = segment.Start.ToString(@"hh\:mm\:ss\.fff"),
+    end = segment.End.ToString(@"hh\:mm\:ss\.fff"),
+    startMs = (long)segment.Start.TotalMilliseconds,
+    endMs = (long)segment.End.TotalMilliseconds,
+    chunkId = segment.SourceChunkId,
+    modelId = segment.ModelId,
+    text = segment.Text
+};
+
+static object ProjectTurn(DialogueTurn turn) => new
+{
+    speakerId = turn.SpeakerId,
+    speaker = turn.SpeakerName,
+    start = turn.Start.ToString(@"hh\:mm\:ss\.fff"),
+    end = turn.End.ToString(@"hh\:mm\:ss\.fff"),
+    startMs = (long)turn.Start.TotalMilliseconds,
+    endMs = (long)turn.End.TotalMilliseconds,
+    turn.NeedsConfirmation,
+    segmentIds = turn.SegmentIds,
+    text = turn.Text
+};
+
+static string TempDbPath(string prefix) =>
+    Path.Combine(Path.GetTempPath(), prefix + "-" + Guid.NewGuid().ToString("N") + ".db");
 
 static bool TryParseMode(string value, out TranscriptionMode mode)
 {

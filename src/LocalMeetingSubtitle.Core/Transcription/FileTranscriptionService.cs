@@ -11,11 +11,16 @@ namespace LocalMeetingSubtitle.Core.Transcription;
 /// timestamped offline transcription → persist the session and segments → diarize → assemble the
 /// role-tagged dialogue.
 ///
+/// Segments are persisted <b>as they are produced</b>, so an interrupted run keeps everything up to
+/// the last committed segment and can resume. The resume cursor is derived from those segments
+/// (max end / max sequence), never from a separately stored counter, so it can never run ahead of
+/// the data that actually exists.
+///
 /// The temporary WAV exists because the V0.4 diarizer is a whole-file engine that loads its input
 /// through <c>IAudioFileLoader</c> (NAudio), which cannot read a video container. We already decode
 /// with FFmpeg, so writing our own WAV makes video files diarizable and keeps the ASR path streaming:
-/// the file is never buffered in memory. The WAV lives under the caller's staging directory (the
-/// app passes its recordings folder, so the existing orphan sweep cleans up after a crash).
+/// the file is never buffered in memory. The WAV lives under the caller's staging directory (the app
+/// passes its recordings folder, so the existing orphan sweep cleans up after a crash).
 /// </summary>
 public sealed class FileTranscriptionService : IFileTranscriptionService
 {
@@ -89,6 +94,7 @@ public sealed class FileTranscriptionService : IFileTranscriptionService
         Directory.CreateDirectory(_stagingDirectory);
         string tempWav = Path.Combine(_stagingDirectory, $"dijob-{Guid.NewGuid():N}.wav");
         string? warning = null;
+        string? sessionId = null;
 
         try
         {
@@ -107,98 +113,150 @@ public sealed class FileTranscriptionService : IFileTranscriptionService
                 return Failure(info, "The file has no audio track.");
             }
 
-            // ---- decode (tee'd to the temp WAV) + transcribe --------------------
-            OfflineTranscriptionResult transcript;
-            TimeSpan written;
-            using (var wav = new PcmWavWriter(tempWav, request.TranscriptionOptions.SampleRate))
+            // ---- session + resume cursor (the cursor IS the committed data) ----
+            bool resuming = !string.IsNullOrEmpty(request.SessionId);
+            TimeSpan resumeFrom = TimeSpan.Zero;
+            int nextSequence = 0;
+
+            if (resuming)
             {
-                var engine = new OfflineTranscriptionEngine(
-                    request.Engine, request.TranscriptionOptions, correct: null, _log);
+                sessionId = request.SessionId!;
+                var existing = await _subtitles.GetSegmentsAsync(sessionId, cancellationToken).ConfigureAwait(false);
+                if (existing.Count > 0)
+                {
+                    resumeFrom = existing.Max(s => s.EndOffset);
+                    nextSequence = existing.Max(s => s.SequenceNumber) + 1;
+                }
 
-                var decoded = _media.DecodeAsync(
-                    new MediaDecodeRequest(request.InputPath, request.AudioStreamIndex, request.TranscriptionOptions.SampleRate),
-                    cancellationToken);
+                await _subtitles.UpdateSessionStatusAsync(sessionId, SessionStatus.Recording, null, cancellationToken)
+                    .ConfigureAwait(false);
+                _log.Info($"Resuming session {sessionId} at {resumeFrom.TotalSeconds:F3}s (sequence {nextSequence}).");
+            }
+            else
+            {
+                var session = new MeetingSession
+                {
+                    Title = request.Title ?? Path.GetFileNameWithoutExtension(request.InputPath),
+                    StartTime = DateTimeOffset.Now,
+                    Status = SessionStatus.Recording,
+                    ModelId = request.TranscriptionOptions.ModelId
+                };
+                await _subtitles.CreateSessionAsync(session, cancellationToken).ConfigureAwait(false);
+                sessionId = session.SessionId;
+            }
 
-                transcript = await engine.TranscribeAsync(
-                    Tee(decoded, wav, cancellationToken),
-                    new ProgressAdapter<OfflineTranscriptionProgress>(p => progress?.Report(new FileTranscriptionProgress(
-                        FileTranscriptionPhase.Transcribe,
-                        Fraction(p.Processed, p.Total),
-                        p.Processed,
-                        p.Total,
-                        p.SegmentsEmitted))),
+            var options = request.TranscriptionOptions;
+            var facts = new List<TranscriptSegmentFact>();
+
+            async Task PersistAsync(OfflineTranscriptSegment segment, CancellationToken token)
+            {
+                var row = new SubtitleSegment
+                {
+                    SessionId = sessionId!,
+                    SequenceNumber = nextSequence++,
+                    StartOffset = segment.Start,
+                    EndOffset = segment.End,
+                    OriginalText = segment.Text,
+                    CorrectedText = segment.Text,
+                    CreatedAt = DateTimeOffset.Now
+                };
+
+                await _subtitles.AppendSegmentAsync(row, token).ConfigureAwait(false);
+                if (row.SegmentId == 0)
+                {
+                    _log.Warn($"Segment {row.SequenceNumber} was not inserted (duplicate sequence number).");
+                    return;
+                }
+
+                facts.Add(new TranscriptSegmentFact(row.SegmentId, segment.Start, segment.End, segment.Text));
+            }
+
+            // ---- decode + transcribe, persisting every segment as it appears ----
+            var engine = new OfflineTranscriptionEngine(request.Engine, options, correct: null, _log);
+            var decodeRequest = new MediaDecodeRequest(request.InputPath, request.AudioStreamIndex, options.SampleRate, resumeFrom);
+            var transcribeProgress = new ProgressAdapter<OfflineTranscriptionProgress>(p => progress?.Report(
+                new FileTranscriptionProgress(
+                    FileTranscriptionPhase.Transcribe,
+                    Fraction(resumeFrom + p.Processed, info.Duration),
+                    resumeFrom + p.Processed,
                     info.Duration,
-                    cancellationToken).ConfigureAwait(false);
+                    facts.Count)));
 
-                written = wav.Duration;
+            OfflineTranscriptionResult transcript;
+            TimeSpan stagedAudio = TimeSpan.Zero;
+            if (resumeFrom == TimeSpan.Zero)
+            {
+                using var wav = new PcmWavWriter(tempWav, options.SampleRate);
+                transcript = await engine.TranscribeAsync(
+                    Tee(_media.DecodeAsync(decodeRequest, cancellationToken), wav, cancellationToken),
+                    transcribeProgress,
+                    info.Duration,
+                    cancellationToken,
+                    PersistAsync).ConfigureAwait(false);
+                stagedAudio = wav.Duration;
+
+                // A dropped tee frame would shift the whole diarization timeline, so verify the copy.
+                if ((stagedAudio - transcript.AudioDuration).Duration() > TimeSpan.FromMilliseconds(100))
+                {
+                    warning = $"Audio copy is {stagedAudio.TotalSeconds:F2}s but {transcript.AudioDuration.TotalSeconds:F2}s was decoded; "
+                        + "speaker timings may be off.";
+                    _log.Warn(warning);
+                }
+            }
+            else
+            {
+                // No tee on a resume: the staging WAV would only hold the tail. It is rebuilt below
+                // if diarization is requested.
+                transcript = await engine.TranscribeAsync(
+                    _media.DecodeAsync(decodeRequest, cancellationToken),
+                    transcribeProgress,
+                    info.Duration,
+                    cancellationToken,
+                    PersistAsync).ConfigureAwait(false);
             }
 
             if (transcript.Cancelled)
             {
-                return new FileTranscriptionResult { Cancelled = true, AudioDuration = transcript.AudioDuration };
-            }
-
-            if (transcript.Segments.Count == 0)
-            {
-                // A silent file is not a failure: report an empty transcript and create no session.
+                await SetSessionStatusAsync(sessionId, SessionStatus.Paused, null, cancellationToken).ConfigureAwait(false);
                 return new FileTranscriptionResult
                 {
-                    AudioDuration = transcript.AudioDuration,
+                    SessionId = sessionId,
+                    Segments = transcript.Segments,
+                    AudioDuration = info.Duration,
+                    Elapsed = stopwatch.Elapsed,
+                    Cancelled = true,
+                    Warning = warning
+                };
+            }
+
+            if (facts.Count == 0)
+            {
+                await SetSessionStatusAsync(sessionId, SessionStatus.Completed, DateTimeOffset.Now, cancellationToken)
+                    .ConfigureAwait(false);
+                return new FileTranscriptionResult
+                {
+                    SessionId = sessionId,
+                    AudioDuration = info.Duration,
                     Elapsed = stopwatch.Elapsed,
                     Completed = true,
-                    Dialogue = new DialogueTranscript(),
-                    Warning = "No speech was recognized in the file."
+                    Dialogue = new DialogueTranscript { SessionId = sessionId },
+                    Warning = warning ?? "No speech was recognized in the file."
                 };
-            }
-
-            // A dropped tee frame would shift the whole diarization timeline, so verify the copy.
-            if ((written - transcript.AudioDuration).Duration() > TimeSpan.FromMilliseconds(100))
-            {
-                warning = $"Audio copy is {written.TotalSeconds:F2}s but {transcript.AudioDuration.TotalSeconds:F2}s was decoded; "
-                    + "speaker timings may be off.";
-                _log.Warn(warning);
-            }
-
-            // ---- persist the transcript ----------------------------------------
-            var session = new MeetingSession
-            {
-                Title = request.Title ?? Path.GetFileNameWithoutExtension(request.InputPath),
-                StartTime = DateTimeOffset.Now,
-                EndTime = DateTimeOffset.Now.Add(transcript.AudioDuration),
-                Status = SessionStatus.Completed,
-                ModelId = request.TranscriptionOptions.ModelId
-            };
-            await _subtitles.CreateSessionAsync(session, cancellationToken).ConfigureAwait(false);
-
-            var facts = new List<TranscriptSegmentFact>(transcript.Segments.Count);
-            for (int i = 0; i < transcript.Segments.Count; i++)
-            {
-                var source = transcript.Segments[i];
-                var segment = new SubtitleSegment
-                {
-                    SessionId = session.SessionId,
-                    SequenceNumber = i,
-                    StartOffset = source.Start,
-                    EndOffset = source.End,
-                    OriginalText = source.Text,
-                    CorrectedText = source.Text,
-                    CreatedAt = DateTimeOffset.Now
-                };
-                await _subtitles.AppendSegmentAsync(segment, cancellationToken).ConfigureAwait(false);
-
-                if (segment.SegmentId == 0)
-                {
-                    _log.Warn($"Segment {i} was not inserted (duplicate sequence number).");
-                    continue;
-                }
-
-                facts.Add(new TranscriptSegmentFact(segment.SegmentId, source.Start, source.End, source.Text));
             }
 
             // ---- diarize (soft failure: the transcript is still valuable) --------
             bool diarized = false;
             if (request.RunDiarization)
             {
+                if (stagedAudio == TimeSpan.Zero)
+                {
+                    // A resumed run has no whole-file staging WAV; build one with a single decode pass.
+                    stagedAudio = await WriteStagingWavAsync(
+                        tempWav,
+                        new MediaDecodeRequest(request.InputPath, request.AudioStreamIndex, options.SampleRate),
+                        cancellationToken).ConfigureAwait(false);
+                }
+
                 if (_diarization.IsBusy)
                 {
                     warning = Append(warning, "Another diarization run is in progress; speakers were not assigned.");
@@ -212,7 +270,7 @@ public sealed class FileTranscriptionService : IFileTranscriptionService
                     {
                         var diarization = await _diarization.RunAsync(
                             new DiarizationRequest(
-                                session.SessionId,
+                                sessionId,
                                 tempWav,
                                 request.DiarizationCountMode,
                                 request.ManualSpeakerCount,
@@ -231,13 +289,15 @@ public sealed class FileTranscriptionService : IFileTranscriptionService
                     }
                     catch (OperationCanceledException)
                     {
+                        await SetSessionStatusAsync(sessionId, SessionStatus.Paused, null, CancellationToken.None).ConfigureAwait(false);
                         return new FileTranscriptionResult
                         {
-                            SessionId = session.SessionId,
+                            SessionId = sessionId,
                             Segments = transcript.Segments,
-                            AudioDuration = transcript.AudioDuration,
+                            AudioDuration = info.Duration,
                             Elapsed = stopwatch.Elapsed,
-                            Cancelled = true
+                            Cancelled = true,
+                            Warning = warning
                         };
                     }
                 }
@@ -245,40 +305,44 @@ public sealed class FileTranscriptionService : IFileTranscriptionService
 
             // ---- assemble the role-tagged dialogue ------------------------------
             progress?.Report(new FileTranscriptionProgress(
-                FileTranscriptionPhase.Assemble, 1.0, transcript.AudioDuration, info.Duration, facts.Count));
+                FileTranscriptionPhase.Assemble, 1.0, info.Duration, info.Duration, facts.Count));
 
-            var assignments = await _speakers.GetAssignmentsAsync(session.SessionId, cancellationToken).ConfigureAwait(false);
-            var speakers = await _speakers.GetSpeakersAsync(session.SessionId, cancellationToken).ConfigureAwait(false);
+            var assignments = await _speakers.GetAssignmentsAsync(sessionId, cancellationToken).ConfigureAwait(false);
+            var speakers = await _speakers.GetSpeakersAsync(sessionId, cancellationToken).ConfigureAwait(false);
 
             var dialogue = _alignment.Align(
-                session.SessionId,
+                sessionId,
                 facts,
                 assignments.ToDictionary(a => a.SegmentId),
                 speakers.Where(s => !s.IsMerged).ToDictionary(s => s.SpeakerId, StringComparer.Ordinal),
                 request.DialogueOptions);
 
+            await SetSessionStatusAsync(sessionId, SessionStatus.Completed, DateTimeOffset.Now.Add(info.Duration), cancellationToken)
+                .ConfigureAwait(false);
+
             stopwatch.Stop();
             _log.Info($"File transcription finished: {facts.Count} segment(s), {dialogue.Turns.Count} turn(s), "
-                + $"diarized={diarized}, elapsed={stopwatch.Elapsed.TotalSeconds:F1}s.");
+                + $"diarized={diarized}, resumed={resuming}, elapsed={stopwatch.Elapsed.TotalSeconds:F1}s.");
 
             return new FileTranscriptionResult
             {
-                SessionId = session.SessionId,
+                SessionId = sessionId,
                 Segments = transcript.Segments,
                 Dialogue = dialogue,
-                AudioDuration = transcript.AudioDuration,
+                AudioDuration = info.Duration,
                 Elapsed = stopwatch.Elapsed,
                 Completed = true,
                 Diarized = diarized,
                 Warning = warning
             };
 
-            FileTranscriptionResult Failure(MediaInfo? info, string message)
+            FileTranscriptionResult Failure(MediaInfo? media, string message)
             {
                 _log.Warn($"File transcription failed: {message}");
                 return new FileTranscriptionResult
                 {
-                    AudioDuration = info?.Duration ?? TimeSpan.Zero,
+                    SessionId = sessionId ?? "",
+                    AudioDuration = media?.Duration ?? TimeSpan.Zero,
                     Elapsed = stopwatch.Elapsed,
                     Error = message
                 };
@@ -286,15 +350,53 @@ public sealed class FileTranscriptionService : IFileTranscriptionService
         }
         catch (OperationCanceledException)
         {
-            return new FileTranscriptionResult { Cancelled = true, Elapsed = stopwatch.Elapsed };
+            await SetSessionStatusAsync(sessionId, SessionStatus.Paused, null, CancellationToken.None).ConfigureAwait(false);
+            return new FileTranscriptionResult { SessionId = sessionId ?? "", Cancelled = true, Elapsed = stopwatch.Elapsed };
         }
         catch (MediaDecodeException ex)
         {
-            return new FileTranscriptionResult { Elapsed = stopwatch.Elapsed, Error = ex.Message };
+            await SetSessionStatusAsync(sessionId, SessionStatus.Aborted, null, CancellationToken.None).ConfigureAwait(false);
+            return new FileTranscriptionResult { SessionId = sessionId ?? "", Elapsed = stopwatch.Elapsed, Error = ex.Message };
         }
         finally
         {
             TryDelete(tempWav);
+        }
+    }
+
+    /// <summary>Decodes a whole file into a fresh staging WAV (used when a resume needs one).</summary>
+    private async Task<TimeSpan> WriteStagingWavAsync(
+        string path,
+        MediaDecodeRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var wav = new PcmWavWriter(path, request.TargetSampleRate);
+        await foreach (var block in _media.DecodeAsync(request, cancellationToken).ConfigureAwait(false))
+        {
+            wav.Write(block.Samples);
+        }
+
+        return wav.Duration;
+    }
+
+    private async Task SetSessionStatusAsync(
+        string? sessionId,
+        SessionStatus status,
+        DateTimeOffset? endTime,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(sessionId))
+        {
+            return;
+        }
+
+        try
+        {
+            await _subtitles.UpdateSessionStatusAsync(sessionId, status, endTime, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _log.Warn($"Could not update session {sessionId} status to {status}: {ex.Message}");
         }
     }
 

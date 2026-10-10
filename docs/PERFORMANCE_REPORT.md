@@ -99,6 +99,24 @@ CPUs). `RTF = inference-seconds / audio-seconds`, printed by the tool.
 - **Not measured:** throughput / memory on a **multi-hour** file (no such fixture exists — the longest
   is 65 s), and the **target-hardware** RTF (the laptop is not available).
 
+### 5.3 Phase 4 — resume cost (qualitative, no RTF recorded)
+
+A file transcription now runs as a **resumable job queue** (Phase 4). One cost property is worth
+recording (it is **qualitative** — no RTF was measured for it):
+
+- **A resumed job performs one extra decode-only pass** to rebuild the whole-file staging WAV for
+  diarization (the V0.4 diarizer is whole-file and NAudio cannot read video). A **fresh** job needs no
+  extra pass — its tee and its ASR decode are the same pass. The pass is decode-only (no ASR), so it is
+  cheap next to the ASR, but it is **not** free. See [`DECISIONS.md`](DECISIONS.md) D19.
+- **The resume seek is input seeking** (`-accurate_seek -ss <seconds>` **before** `-i`), so the
+  already-transcribed prefix is skipped in the container (O(1)) rather than decoded and discarded.
+
+- **Measured:** nothing quantitative — the Phase 4 runs recorded segment counts and statuses, not
+  wall-clock throughput. In the two-invocation demo the **resumed** run reported `elapsed=3.9s` on the
+  **14.1 s** fixture (dev host), but that is the tool's own elapsed value, **not** a per-byte RTF.
+- **Not measured:** the extra-pass cost on a **long** file (no such fixture exists), and the
+  **target-hardware** cost — still **`BLOCKED` / `NOT_TESTED`**.
+
 ## 6. Methodology
 
 - **RTF** = inference-seconds / audio-seconds; produced by `tools/AsrBenchmark` (it prints

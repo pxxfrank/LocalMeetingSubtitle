@@ -149,19 +149,20 @@ consequence/trade-off.
 - **Consequence:** overlap de-dup is deterministic and testable (`OverlapTextDeduplicatorTests`); the
   `Dropped` outcome is reported rather than silently producing an empty segment.
 
-## D13 — SQLite migration 5 deferred to Phase 4
+## D13 — SQLite migration 5 deferred to Phase 4 (Phase 2 kept migration 4)
 
-- **Decision:** do **not** add a schema migration in Phase 2. Keep the database at **migration 4** and
-  defer the V0.5 job/queue/checkpoint tables (`MediaFile` / `TranscriptionJob` / `TranscriptionChunk` /
-  `JobCheckpoint`) to **Phase 4**.
+- **Decision (Phase 2):** do **not** add a schema migration in Phase 2. Keep the database at
+  **migration 4** and defer the V0.5 job/queue/checkpoint schema to **Phase 4**.
 - **Context:** Phase 2's `OfflineTranscriptionEngine` returns results **in memory**; there is no job
   queue, no per-chunk checkpoint, and no resume yet (that is Phase 4).
 - **Rationale:** adding tables before their owning feature exists would freeze a schema that would then
-  churn; migration 4 already stores what a transcript *is*. A file transcript can be persisted today
-  with **no schema change** — one `MeetingSession` plus one `segments` row per result (existing
+  churn; migration 4 already stores what a transcript *is*. A file transcript could be persisted with
+  **no schema change** — one `MeetingSession` plus one `segments` row per result (existing
   `SqliteSubtitleRepository`, `StartOffsetMs` / `EndOffsetMs`).
-- **Consequence:** Phase 2 requires **no migration**; the schema stays at migration 4, and the
-  job/orchestration schema is designed and added together with the Phase 4 job service.
+- **Outcome (superseded by Phase 4):** migration 5 was **added in Phase 4** (`file transcription job
+  schema`; see D17). Phase 2 itself required **no migration**, and the schema stayed at migration 4
+  until Phase 4. The tables this entry previously pre-declared (`MediaFile` / `TranscriptionJob` /
+  `TranscriptionChunk` / `JobCheckpoint`) were **not** created verbatim — the real table set is D17.
 
 ## D14 — Temp-WAV tee + reuse `SpeakerDiarizationService` unchanged (Phase 3)
 
@@ -224,3 +225,78 @@ consequence/trade-off.
 - **Consequence:** `Participants` aggregate speaking time / turn count / segment count over **known**
   speakers, ordered by speaking time **descending**; the rule is unit-tested
   (`TranscriptAlignmentServiceTests`).
+
+## D17 — Migration-5 table set, and the resume cursor derived from `segments` (Phase 4)
+
+- **Decision:** migration 5 (`file transcription job schema`) adds exactly **two** tables —
+  `media_files` and `transcription_jobs` (plus the `ix_transcription_jobs_queue (Status, QueuedAt)`
+  index). It does **not** add `transcription_chunks`, `transcript_segments` or `job_checkpoints`. **The
+  resume cursor is derived from the committed `segments` rows**
+  (`MAX(EndOffsetMs)`, `MAX(SequenceNumber)+1`) and is **never stored in a separate checkpoint**.
+- **Context:** the table list this project had previously pre-declared (`MediaFile` / `TranscriptionJob`
+  / `TranscriptionChunk` / `TranscriptSegment` / `JobCheckpoint`, D13) assumed an upfront chunk plan and
+  a stored checkpoint cursor.
+- **Rationale:**
+  - The **VAD is a streaming state machine** with no upfront chunk plan, so there is no
+    `transcription_chunks` work-unit to persist.
+  - The transcript **reuses the existing `segments` table** and the speaker reference reuses
+    `speaker_assignments`, so a parallel `transcript_segments` table would duplicate them.
+  - A stored cursor can **drift ahead** of the data if the process dies between "advance the cursor" and
+    "commit the segment". Deriving the cursor from the committed `segments` means it **can never run
+    ahead** of the data that actually exists.
+- **Consequence:** `ProcessedMs` / `SegmentsEmitted` on the job row are only a **throttled (≥ 2 s)
+  display snapshot** — they are **never** used to resume. The migration is purely additive in the
+  migration-4 style (lower-case names, `CREATE TABLE IF NOT EXISTS`, no foreign keys).
+
+## D18 — Resume at the last committed segment's end, with ffmpeg input seeking (Phase 4)
+
+- **Decision:** a resume derives `resumeFrom = MAX(EndOffsetMs)` and
+  `startSequence = MAX(SequenceNumber)+1` from the committed `segments`, seeks the decode to
+  `resumeFrom`, and sets the session back to `Recording`. The seek is **input seeking**:
+  `FFmpegMediaDecodeService` inserts `-accurate_seek` and `-ss <seconds>` **before** `-i`.
+- **Context:** `FileTranscriptionService` must extend an interrupted job's transcript in place without
+  re-transcribing or duplicating the prefix; `MediaDecodeRequest` gained a `TimeSpan StartOffset`.
+- **Rationale:** `-ss` **before `-i`** seeks in the input container instead of decoding and discarding
+  the prefix (**O(1)** rather than O(offset)), while `-accurate_seek` keeps the seek accurate. Every
+  emitted `PcmBlock.Start` is offset by `StartOffset`, so **positions stay absolute** on the media
+  timeline and the resumed segments line up with the pre-interrupt ones.
+- **Consequence / limits:**
+  - WAV/PCM seeking is **bit-exact** (verified: mean sample difference < 1e-6); **mp3 seeking is not
+    sample-exact** (decoder delay, tens of ms). The emitted block positions stay absolute either way.
+  - The first segment produced **immediately after a resume** can be transcribed slightly differently
+    from an uninterrupted run (the VAD/recognizer restarts there with different leading context). Count,
+    ordering, sequence numbers and timing are preserved and nothing is duplicated — the transcript is
+    **structurally identical**, not textually identical (see [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) P3-20).
+
+## D19 — Rebuild the whole-file staging WAV with an extra decode pass on a resumed job (Phase 4)
+
+- **Decision:** the temporary diarization WAV is tee'd only when the run starts at offset zero. A
+  **resumed** run **rebuilds the whole-file WAV first with one extra decode-only pass** before
+  diarization.
+- **Context:** the V0.4 diarizer (D14) is a **whole-file** engine, and NAudio cannot read a video
+  container, so diarization runs over the temp WAV. A resumed run starts decoding at `resumeFrom`, so
+  its tee would only cover the tail of the file, not the whole file.
+- **Rationale:** diarization needs the whole file to cluster speakers correctly; the resume point only
+  affects transcription, not the diarization input. Rebuilding the WAV (rather than diarizing a partial
+  file) keeps the speakers correct at the cost of one decode-only pass.
+- **Consequence:** a **resumed** job costs one extra decode-only pass over the file; a **fresh** job
+  needs no extra pass (the tee and the ASR decode are the same pass). Recorded in
+  [`PERFORMANCE_REPORT.md`](PERFORMANCE_REPORT.md).
+
+## D20 — Cooperative cancel + re-queue; the composition root owns the recognizer (Phase 4)
+
+- **Decision:** `ITranscriptionJobService.CancelAsync` is a **cooperative cancel** (a queued job is
+  marked `Cancelled` immediately; a running job stops at the next cancellation check).
+  `ResumeAsync` **re-queues** the job and the caller/composition root (the injected
+  `TranscriptionJobResolver`) **owns the recognizer**: it creates a **fresh engine per attempt**, and
+  the **job service disposes the engine it is given**.
+- **Context:** a job must survive a restart and be cancellable without corrupting the committed data;
+  the engine is an expensive, per-run resource that cannot be reused across attempts.
+- **Rationale:** cooperative cancellation guarantees the run stops at a **segment boundary** (nothing
+  half-written), and re-queueing re-runs the job through the same resolver seam so the request is
+  rebuilt from the stored row every time. Because the resolver creates a fresh engine per attempt, the
+  job service can safely own (and dispose) whatever the resolver returns.
+- **Consequence:** `RecoverUnfinishedAsync` marks jobs left `Running` by a previous session as
+  `Interrupted` (they can then be resumed); canceled jobs end as `Cancelled` with the session `Paused`;
+  a decode failure ends as `Failed` with the session `Aborted`. Cancel/resume/recover are exercised by
+  `TranscriptionJobServiceTests` and the `FileTranscribe --jobs` interrupt→resume run.

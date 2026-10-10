@@ -38,11 +38,16 @@ public sealed class OfflineTranscriptionEngine
     /// The enumeration is never buffered, so arbitrarily long files can be processed.
     /// </summary>
     /// <param name="totalDuration">Media duration when known; only used to fill in progress reports.</param>
+    /// <param name="onSegment">
+    /// Awaited as each segment is produced, so the caller can persist it before more audio is
+    /// consumed (an interrupted job then keeps everything up to the last committed segment).
+    /// </param>
     public async Task<OfflineTranscriptionResult> TranscribeAsync(
         IAsyncEnumerable<PcmBlock> blocks,
         IProgress<OfflineTranscriptionProgress>? progress = null,
         TimeSpan? totalDuration = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<OfflineTranscriptSegment, CancellationToken, Task>? onSegment = null)
     {
         if (!_engine.IsInitialized)
         {
@@ -72,7 +77,7 @@ public sealed class OfflineTranscriptionEngine
 
                 foreach (var speech in segmenter.PushSegments(block.Samples))
                 {
-                    DecodeSegment(state, session, speech);
+                    await DecodeSegmentAsync(state, session, speech, onSegment, cancellationToken).ConfigureAwait(false);
                     progress?.Report(state.Progress());
                 }
 
@@ -82,7 +87,7 @@ public sealed class OfflineTranscriptionEngine
             var tail = segmenter.FlushSegment();
             if (tail != null)
             {
-                DecodeSegment(state, session, tail.Value);
+                await DecodeSegmentAsync(state, session, tail.Value, onSegment, cancellationToken).ConfigureAwait(false);
                 progress?.Report(state.Progress());
             }
         }
@@ -115,7 +120,12 @@ public sealed class OfflineTranscriptionEngine
         };
     }
 
-    private void DecodeSegment(DecodeState state, IAsrSession session, SpeechSegment speech)
+    private async Task DecodeSegmentAsync(
+        DecodeState state,
+        IAsrSession session,
+        SpeechSegment speech,
+        Func<OfflineTranscriptSegment, CancellationToken, Task>? onSegment,
+        CancellationToken cancellationToken)
     {
         // The VAD keeps the silence that precedes speech (it is part of the same buffer). Dropping it
         // here makes the reported start time point at the speech itself, which is what a transcript needs.
@@ -171,12 +181,19 @@ public sealed class OfflineTranscriptionEngine
             final = EnsureTerminalPunctuation(final);
         }
 
-        state.Segments.Add(new OfflineTranscriptSegment(
+        var segment = new OfflineTranscriptSegment(
             state.ReportedStart(trimmed),
             state.TimeOf(trimmed.EndSample),
             final,
             state.ChunkId,
-            _options.ModelId));
+            _options.ModelId);
+
+        state.Segments.Add(segment);
+
+        if (onSegment is not null)
+        {
+            await onSegment(segment, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>Advances a segment past any leading silence so its start time is the speech onset.</summary>

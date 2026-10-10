@@ -62,7 +62,7 @@ tools/
   AudioCaptureProbe                   list / capture WASAPI loopback
   AsrBenchmark                        decode a WAV, report timing / RTF / memory
   OfflineVerification                 5 offline-capability checks
-  FileTranscribe                      transcribe a local audio/video file (three modes)
+  FileTranscribe                      transcribe a local audio/video file (three modes); run/resume the job queue (--jobs)
 ```
 
 Runtime data lives under `%LOCALAPPDATA%\SubtitleJun\` (`subtitles.db`, `logs\`, `models\`,
@@ -283,6 +283,70 @@ regenerate them locally before running file-transcription work. They are the fix
 Phase 2 evidence in [`FILE_TRANSCRIPTION_TEST_REPORT.md`](FILE_TRANSCRIPTION_TEST_REPORT.md) (§4.5) and
 the Phase 3 evidence (§4.6). Building `two-speakers.wav` requires the two-speaker eval sources
 (`models/_diar-eval/…`) from the diarization models.
+
+### 6.6 Job queue + resume (`tools/FileTranscribe --jobs`)
+
+Phase 4 runs file transcription as a **background job queue** (`ITranscriptionJobService`): enqueue a
+file, the single FIFO worker processes it, and an interrupted job can be **resumed from the committed
+`segments`**. The CLI exposes this with `--jobs`:
+
+```powershell
+# Enqueue a file and drain the queue synchronously (the worker runs in-process)
+dotnet run --project tools/FileTranscribe -- --jobs --file testmedia/two-speakers.wav `
+    --mode high --diarize --models-root models
+
+# Persist job/segment state to a SPECIFIC database (otherwise a TEMP db is used and deleted on exit)
+dotnet run --project tools/FileTranscribe -- --jobs --file testmedia/two-speakers.wav `
+    --mode high --diarize --models-root models --db .\ftjobs.db
+
+# List the jobs stored in that database
+dotnet run --project tools/FileTranscribe -- --jobs --list-jobs --db .\ftjobs.db
+
+# Resume a specific job id from its committed segments (use the SAME --db!)
+dotnet run --project tools/FileTranscribe -- --jobs --resume-job <jobId> --db .\ftjobs.db
+```
+
+`--jobs` flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--jobs` | run the job-queue path (instead of the one-shot `--file` path) |
+| `--file <path>` | enqueue this file |
+| `--db <path>` | use this SQLite database. **Without `--db` a temporary DB is created and deleted on exit**, so nothing persists between invocations |
+| `--interrupt-after N` | after `N` segments have been persisted, cancel the running job (a checkpoint demo) |
+| `--resume-job <id>` | resume the job with this id |
+| `--list-jobs` | print the stored jobs and exit |
+| `--mode fast\|standard\|high`, `--models-root <path>`, `--track N`, `--diarize`, `--json` | as in §6.4 |
+
+> **`--jobs` always constructs the diarization service**, so it needs the two diarization model folders
+> under `models/` (see §4). It prints a
+> `JOB <id> <status> segments=… processed=…/… attempts=… resumes=… session=… error=…` line per job,
+> followed by the stored transcript of the newest session.
+
+**Demonstrate interrupt → resume** (two invocations that share one `--db`):
+
+```powershell
+# 1) enqueue, then interrupt after 2 persisted segments
+tools\FileTranscribe\bin\Debug\net8.0-windows\FileTranscribe.exe --jobs `
+    --file testmedia\two-speakers.wav --mode high --diarize --models-root models `
+    --db .\ftjobs.db --interrupt-after 2
+
+# 2) resume that same job id (from step 1's output)
+tools\FileTranscribe\bin\Debug\net8.0-windows\FileTranscribe.exe --jobs `
+    --resume-job <jobId> --models-root models --db .\ftjobs.db
+```
+
+Step 1 leaves the job `Cancelled` with **2 committed segments**; step 2 re-queues it, resumes at the
+last committed segment's end (`Resuming session … at 4.540s (sequence 2)`), and finishes `Succeeded`
+with **6 contiguous segments**. The transcript is **structurally identical** to an uninterrupted run,
+but **the one segment at the resume boundary can have different text** — do not expect byte-identical
+output (see [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) P3-20). Full evidence:
+[`FILE_TRANSCRIPTION_TEST_REPORT.md`](FILE_TRANSCRIPTION_TEST_REPORT.md) §4.7. A **resumed** job costs
+one extra decode-only pass to rebuild the whole-file diarization WAV
+([`DECISIONS.md`](DECISIONS.md) D19).
+
+> `--jobs` is the **only** way to exercise the queue today — there is **no UI** (the dialogue editor is
+> Phase 5).
 
 ## 7. Conventions
 

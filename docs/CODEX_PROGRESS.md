@@ -3,15 +3,16 @@
 ## Current phase
 
 **V0.4.0 released (HEAD `554c8eb`); V0.5 "offline file transcription + role-tagged dialogue" is in
-progress — Phases 0–3 complete, Phase 4 not started.**
+progress — Phases 0–4 complete, Phase 5 not started.**
 
 The V0.4 live-subtitle product builds, its tests pass on the development host, a real model decodes
 Chinese, offline guarantees are verified, and a self-contained release artifact is produced. V0.5 adds
 a bundled **LGPL FFmpeg** media-decode layer (import audio/video → 16 kHz mono PCM), **segmented
-long-audio offline ASR** (VAD → per-segment decode → global timestamps, with a three-mode catalog) and
-**role-tagged dialogue** (offline diarization of the decoded file + transcript/speaker alignment). The
-remaining V0.5 work (job queue, editor UI, export, packaging) is **not started**, and the remaining work
-overall is **acceptance on the real Windows 11 target hardware**.
+long-audio offline ASR** (VAD → per-segment decode → global timestamps, with a three-mode catalog),
+**role-tagged dialogue** (offline diarization of the decoded file + transcript/speaker alignment) and a
+**resumable job queue** (migration 5: enqueue → one FIFO worker → resume from the committed segments).
+The remaining V0.5 work (dialogue editor UI, export, packaging) is **not started**, and the remaining
+work overall is **acceptance on the real Windows 11 target hardware**.
 
 Status banner: **候选发布版本 — 待实机验收；V0.5（离线文件转写）进行中 / Release candidate (V0.4.0) — pending hardware acceptance; V0.5 (offline file transcription) in progress.**
 
@@ -993,3 +994,139 @@ tools\FileTranscribe\bin\Debug\net8.0-windows\FileTranscribe.exe --file testmedi
 - **诚实边界：** 全部目标机（Win11 + Core Ultra 7 155H）验收仍 **BLOCKED/NOT_TESTED**；对话仅在 **14.1 s**
   两人素材上验证，**未分离长文件**；**无参考对话**，未做对齐正确率核对；Phase 3 的限制见 `KNOWN_ISSUES`
   P3-17/P3-18/P3-19。
+
+## Update — V0.5 Phase 4（作业队列 + 断点续跑，job queue + checkpoint/resume）— DONE (2026-10-10)
+
+**目标：** 把 Phase 3 的单文件运行改造成**可排队、可中断、可从已提交数据断点续跑**的后台**作业队列**
+（`ITranscriptionJobService`），并新增 **SQLite 迁移 5** 存放文件/作业编排层。**Phase 4 完成；Phase 5 及以后未开始。**
+**实时字幕路径未改动**（无回归）。
+
+### 新增 / 修改的代码（全部增量）
+- **迁移 5**（`src/LocalMeetingSubtitle.Storage/SqliteDatabase.cs`）—— schema 现为**版本 5**，纯新增、迁移 4 风格
+  （小写表名、`CREATE TABLE IF NOT EXISTS`、**无外键**）：
+  - `media_files(MediaFileId TEXT PK, Path, FileName, Kind INTEGER, ContainerFormat, DurationMs INTEGER, SizeBytes INTEGER, AudioStreamIndex INTEGER NULL, CreatedAt TEXT)`；
+  - `transcription_jobs(JobId TEXT PK, MediaFileId, SessionId TEXT NULL, Title, Mode INTEGER, ModelId, AudioStreamIndex INTEGER NULL, RunDiarization INTEGER, DiarizationCountMode INTEGER, ManualSpeakerCount INTEGER, ClusteringThreshold REAL, Status INTEGER, Phase INTEGER, ProcessedMs INTEGER, TotalMs INTEGER, SegmentsEmitted INTEGER, QueuedAt, StartedAt NULL, FinishedAt NULL, Attempts INTEGER, ResumeCount INTEGER, Error NULL, Warning NULL)`；
+  - 索引 `ix_transcription_jobs_queue (Status, QueuedAt)`。
+  - **刻意未创建**（与 `docs/ARCHITECTURE_V05.md` §5 此前预声明的表不一致）：`transcription_chunks`（VAD 是**流式状态机**，
+    无事先分块计划）、`transcript_segments`（转写**复用既有 `segments` 表**，说话人引用复用 `speaker_assignments`）、
+    `job_checkpoints` —— **续跑游标由已提交的 `segments` 派生**（`MAX(EndOffsetMs)`、`MAX(SequenceNumber)+1`），
+    因此**绝不会领先于真实存在的数据**。作业行的 `ProcessedMs`/`SegmentsEmitted` 只是**限频的展示快照**（最多每 2 s 写一次）。
+- **新增** `src/LocalMeetingSubtitle.Core/Models/JobModels.cs` ——
+  `enum TranscriptionJobStatus { Queued, Running, Paused, Succeeded, Failed, Cancelled, Interrupted }`；
+  `MediaFileRecord`；`TranscriptionJob`（全部作业列 + `Progress`、`IsFinished`、`IsRunnable`）；
+  `sealed record TranscriptionJobRequest(InputPath, TranscriptionMode Mode, string ModelId, int? AudioStreamIndex, bool RunDiarization, string? Title, SpeakerCountMode DiarizationCountMode, int ManualSpeakerCount, double ClusteringThreshold)`。
+- **新增** `src/LocalMeetingSubtitle.Core/Abstractions/JobAbstractions.cs` ——
+  `IMediaFileRepository`、`ITranscriptionJobRepository`、
+  `delegate Task<FileTranscriptionRequest> TranscriptionJobResolver(TranscriptionJob job, CancellationToken ct)`、
+  `ITranscriptionJobService { event JobChanged; bool IsProcessing; int QueueLength; Task<TranscriptionJob> EnqueueAsync(TranscriptionJobRequest, MediaInfo, ct); Task<TranscriptionJob?> GetJobAsync(jobId, ct); Task<IReadOnlyList<TranscriptionJob>> GetJobsAsync(ct); Task<bool> CancelAsync(jobId, ct); Task<bool> ResumeAsync(jobId, ct); Task<int> RecoverUnfinishedAsync(ct); Task StartAsync(ct); Task StopAsync(ct); Task<int> DrainAsync(ct); }`（亦 `IAsyncDisposable`）。
+- **新增** `src/LocalMeetingSubtitle.Storage/SqliteMediaFileRepository.cs`、`SqliteTranscriptionJobRepository.cs` —— 手写，风格同 `SqliteAudioAssetRepository`。
+- **新增** `src/LocalMeetingSubtitle.Core/Transcription/TranscriptionJobService.cs` —— 单个 FIFO 工作线程，专用
+  `Thread { IsBackground = true, Priority = ThreadPriority.BelowNormal, Name = "file-transcription-worker" }`，由 `StartAsync` 惰性创建。
+  **入队只写行**；每次运行都经注入的 `TranscriptionJobResolver` 从存储的作业**重建请求**，故作业可跨重启存活。解析器**每次尝试新建识别器**，
+  作业服务负责释放它。`CancelAsync` = **协作式取消**（排队作业立即标记 `Cancelled`）；`ResumeAsync` 重新入队（文件服务自动从已提交数据续跑）；
+  `RecoverUnfinishedAsync` 把上个会话遗留的 `Running` 标记 `Interrupted`；`DrainAsync` 同步处理队列（测试/CLI）。
+  队列按 `QueuedAt` FIFO；`QueuedAt` 入队时用 `NextQueuedAt` 保证**严格递增**，同刻入队亦确定排序。
+- **修改** `src/LocalMeetingSubtitle.Core/Transcription/OfflineTranscriptionEngine.cs` —— `TranscribeAsync` 新增可选**等待式**回调
+  `Func<OfflineTranscriptSegment, CancellationToken, Task>? onSegment`，使调用方在**消耗更多音频之前**持久化每个分段；传 `null` 与之前**逐字节一致**。
+- **修改** `src/LocalMeetingSubtitle.Core/Transcription/FileTranscriptionService.cs` —— **增量持久化**：探针成功后创建
+  （或当 `FileTranscriptionRequest.SessionId` 非空时**复用**）`MeetingSession`，然后每产出一个分段追加一行 `segments`。续跑时从已提交分段派生
+  `resumeFrom = max(EndOffset)` 与 `startSequence = max(SequenceNumber)+1`，把解码定位到该处，并把会话置回 `Recording`；成功 → 会话 `Completed`
+  （取消 → `Paused`，解码失败 → `Aborted`）。
+- **修改** `src/LocalMeetingSubtitle.Core/Models/MediaModels.cs` —— `MediaDecodeRequest` 新增 `TimeSpan StartOffset = default`。
+- **修改** `src/LocalMeetingSubtitle.Media/FFmpegMediaDecodeService.cs` —— 插入 `-accurate_seek`，且当偏移非零时把
+  `-ss <seconds>` 放在 **`-i` 之前**（**输入定位**：O(1)，而非解码并丢弃前缀），并把每个发出的 `PcmBlock.Start` 平移该偏移，位置在媒体时间轴上保持**绝对**。
+- **修改** `src/LocalMeetingSubtitle.App/App.xaml.cs` —— 注册 `IMediaFileRepository`、`ITranscriptionJobRepository`、`ITranscriptionJobService`；
+  `ResolveJobRequestAsync` 从作业行解析模式，**每次尝试新建并初始化**一个 `SherpaOnnxAsrEngine` 并传入作业的 `SessionId`；`StartInitializationAsync`
+  现调用 `RecoverUnfinishedAsync()`。**无 UI**（编辑器归 Phase 5）。
+- **修改** `tools/FileTranscribe` —— 新增 `--jobs [--file <path>] [--db <path>] [--interrupt-after N] [--resume-job <id>] [--list-jobs]`，
+  并打印 `JOB <id> <status> segments=… processed=…/… attempts=… resumes=… session=… error=…` 及存储的转写。
+
+### 关键决策（详见 `docs/DECISIONS.md` D17–D20）
+1. **迁移 5 表集合 + 续跑游标由 `segments` 派生（D17）。** 只加 `media_files`/`transcription_jobs` 两张表；不加
+   `transcription_chunks`/`transcript_segments`/`job_checkpoints`。**游标 `MAX(EndOffsetMs)`/`MAX(SequenceNumber)+1` 由已提交 `segments` 派生，
+   绝不单独存储**——存储的游标可能在「推进游标」与「提交分段」之间因崩溃而**领先于真实数据**。
+2. **在最后一条已提交分段的末尾续跑 + ffmpeg 输入定位（D18）。** `-ss` 放在 **`-i` 之前** + `-accurate_seek`；WAV/PCM 定位**逐位精确**，
+   mp3 **非采样精确**（数十毫秒），但发出的块位置始终绝对。
+3. **续跑作业用一次额外的「仅解码」pass 重建整文件暂存 WAV（D19）。** V0.4 分离器是**整文件**引擎，续跑只解码尾部无法正确聚类说话人，
+   故先重建整文件 WAV。
+4. **暂停/取消为协作式取消 + 重新入队；调用方/组合根持有识别器（D20）。** 每次尝试新建引擎，作业服务释放被交给它的引擎。
+
+### 实测证据（开发主机：Windows 10 Pro，Xeon 64 逻辑核，64 GB）
+> 目标硬件（X1 Carbon Gen 12 / Core Ultra 7 155H）**不可用** —— 以下**未**在目标机验证。
+
+`tools/FileTranscribe --jobs` 对 `testmedia/two-speakers.wav`（高精度 + `--diarize`）配**持久 `--db`** 运行**两次**：
+
+```text
+=== RUN 1: --interrupt-after 2 ===
+JOB=1162446974ba41aa941e801f6605ffe7 STATUS=Queued
+INTENTIONAL-INTERRUPT after 2 persisted segment(s).
+INFO  Job 1162446974ba41aa941e801f6605ffe7 finished as Cancelled (2 segment(s)).
+JOB 1162446974ba41aa941e801f6605ffe7 Cancelled segments=2 processed=0.0/14.1s attempts=1 resumes=0 session=ab087a02e2c44a978fa03780eabb75fa error=
+SESSION=ab087a02e2c44a978fa03780eabb75fa SEGMENTS=2
+  #0 [00:00:00.260 - 00:00:01.940] 今天是星期二。
+  #1 [00:00:02.860 - 00:00:04.540] 今天是星期二。
+
+=== RUN 2: --resume-job <id> ===
+RESUMED=1162446974ba41aa941e801f6605ffe7
+INFO  Resuming session ab087a02e2c44a978fa03780eabb75fa at 4.540s (sequence 2).
+INFO  Diarization run c79760ebf61f4040ab1b925b5370d5f1: 225592 samples (00:00:14.0995000) from …\dijob-….wav
+INFO  Diarization run c79760ebf61f4040ab1b925b5370d5f1 succeeded: 2 speakers, 6/6 assigned, 0 need confirmation
+INFO  File transcription finished: 4 segment(s), 1 turn(s), diarized=True, resumed=True, elapsed=3.9s.
+INFO  Job 1162446974ba41aa941e801f6605ffe7 finished as Succeeded (4 segment(s)).
+JOB 1162446974ba41aa941e801f6605ffe7 Succeeded segments=4 processed=14.1/14.1s attempts=2 resumes=1 session=ab087a02… error=
+SESSION=ab087a02e2c44a978fa03780eabb75fa SEGMENTS=6
+  #0 [00:00:00.260 - 00:00:01.940] 今天是星期二。
+  #1 [00:00:02.860 - 00:00:04.540] 今天是星期二。
+  #2 [00:00:05.580 - 00:00:07.299] 这是我第四次。
+  #3 [00:00:07.920 - 00:00:09.340] 办年度演讲。
+  #4 [00:00:10.099 - 00:00:11.800] 这是我第四次。
+  #5 [00:00:12.420 - 00:00:13.820] 办年度演讲。
+```
+
+即中断的作业保留了 2 条已提交分段；续跑**恰好从 4.540 s、sequence 2 开始**，并以 **6 条连续分段（0..5）** 结束，
+时间轴与不间断运行一致；分离在**整段 14.1 s** 文件上运行（`225592 samples`），证明续跑时**重建了整文件 WAV**。
+
+### 已知限制（诚实记录）
+1. **续跑边界分段的文本可能与不间断运行不同（OPEN，P2）。** 续跑后马上产出的第一个分段，因 VAD/识别器在此以不同的
+   前导上下文重启，转写结果可能略有差异。两人素材上观察到：不间断运行对该窗口产出 `四次班年度演。`，续跑运行产出 `年度演。`。
+   分段**数量、顺序、序号、时间戳均保留**，无重复——转写**结构一致**，但**不是逐字一致**；除续跑边界那一条外，其余每条完全一致。
+   **不要声称「转写完全相同」。**
+2. **mp3 定位非采样精确**（解码器延迟，数十毫秒）；WAV/PCM 定位**逐位精确**（实测平均样本差 < 1e-6）。两者发出的块位置均为绝对。
+3. **工作线程的 `Priority = BelowNormal` 是「愿景」：** 一次运行中首次真实 `await` 之后，续体在线程池上执行，优先级提示主要覆盖
+   进程启动阶段。**真正的隔离手段是结构性的**：同一时刻**只有一个作业**、低线程上限、**独立的 ffmpeg 子进程**。`ARCHITECTURE_V05.md`
+   §7 的线程说法应表述为「愿景」。
+4. **续跑作业多做一次「仅解码」pass** 重建整文件暂存 WAV（新作业不需要）。
+5. 作业行的 `ProcessedMs` 是**限频（≥ 2 s）展示快照**；续跑游标始终是已提交的 `segments` 数据，**绝不**用该字段。
+6. **整文件仍由 V0.4 分离器处理**（4 h 上限；4 h 约 1.8 GB 瞬态；> 2 h 有风险）——与 Phase 3 相同。
+7. **文件转写仍无 UI**（Phase 5 是对话编辑器）；`AppSettings.EnableVadSegmenting` 仍未接线（P3-2）。
+
+### 测试
+- 单元 **208 → 222**（**+14**：新增 `SqliteTranscriptionJobRepositoryTests`、`TranscriptionJobServiceTests`、
+  `FileTranscriptionServiceTests` 中的续跑用例，以及共享测试替身）。
+- 集成 **43 → 46**（**+3**：新增 `FileTranscriptionResumeTests`（中断→续跑）与 `MediaDecodeOffsetTests`（`-ss` 定位））。
+- **无实时路径回归**；`MainViewModel` 未改动；构建 0 错误。
+
+### 验证命令
+```powershell
+$env:PATH = "$env:USERPROFILE\.dotnet;$env:PATH"
+dotnet build LocalMeetingSubtitle.sln -c Release
+dotnet test tests/LocalMeetingSubtitle.UnitTests/LocalMeetingSubtitle.UnitTests.csproj -c Debug
+dotnet test tests/LocalMeetingSubtitle.IntegrationTests/LocalMeetingSubtitle.IntegrationTests.csproj -c Debug
+
+# 作业队列（持久 --db；中断后可用 --resume-job 续跑）
+tools\FileTranscribe\bin\Debug\net8.0-windows\FileTranscribe.exe --jobs --file testmedia\two-speakers.wav --mode high --diarize --models-root models --db .\ftjobs.db --interrupt-after 2
+tools\FileTranscribe\bin\Debug\net8.0-windows\FileTranscribe.exe --jobs --resume-job <jobId> --models-root models --db .\ftjobs.db
+tools\FileTranscribe\bin\Debug\net8.0-windows\FileTranscribe.exe --jobs --list-jobs --db .\ftjobs.db
+```
+
+### 断点续跑信息（下一会话）
+- **当前阶段：** V0.5 Phase 4 完成；**Phase 5 未开始**。
+- **已完成：** Phase 0 FFmpeg 工具链；Phase 1 媒体解码层；Phase 2 长音频离线 ASR；Phase 3 角色标注对话；
+  Phase 4 作业队列 + 断点续跑（迁移 5、`ITranscriptionJobService`、增量持久化、由 `segments` 派生的游标、`-ss` 输入定位）。
+- **下一步（Phase 5）：** **对话编辑界面（rename / merge / reassign turns）** —— 复用 V0.4 发言人管理（SD-07/08/09），
+  并把文件作业的**角色标注对话**接入 UI；`TranscriptAlignmentService` 是**幂等纯函数**，可供编辑器重组。
+- **下一步要改的文件：** `src/LocalMeetingSubtitle.App/`（新编辑器视图/视图模型 + DI 注册），可能新增 `Core/` 侧编辑契约；
+  测试在 `tests/LocalMeetingSubtitle.UnitTests/` 与 `IntegrationTests/` 下新增。**注意：作业服务已就绪但未接 UI。**
+- **下一验收目标：** `RELEASE_CHECKLIST` 的 **FT-15**（对话编辑界面）与 **FT-17**（任务进度/状态 UI）。
+- **诚实边界：** 全部目标机（Win11 + Core Ultra 7 155H）验收仍 **BLOCKED/NOT_TESTED**；续跑转写**结构一致但非逐字一致**；
+  演示为**协作式取消**而非真实进程杀灭；**无 UI**；长文件与 CER/WER **未测**。Phase 4 限制见 `KNOWN_ISSUES` P3-20..P3-26。

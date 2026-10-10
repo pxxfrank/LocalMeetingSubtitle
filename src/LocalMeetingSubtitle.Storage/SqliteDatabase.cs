@@ -180,6 +180,50 @@ public sealed class SqliteDatabase : IAsyncDisposable
             );
             """,
             "CREATE INDEX IF NOT EXISTS ix_audio_assets_expiry ON audio_assets (IsTemporary, DeleteAfterUtc);"
+        }),
+        new(5, "file transcription job schema", new[]
+        {
+            """
+            CREATE TABLE IF NOT EXISTS media_files (
+                MediaFileId      TEXT    NOT NULL PRIMARY KEY,
+                Path             TEXT    NOT NULL,
+                FileName         TEXT    NOT NULL DEFAULT '',
+                Kind             INTEGER NOT NULL DEFAULT 0,
+                ContainerFormat  TEXT    NOT NULL DEFAULT '',
+                DurationMs       INTEGER NOT NULL DEFAULT 0,
+                SizeBytes        INTEGER NOT NULL DEFAULT 0,
+                AudioStreamIndex INTEGER NULL,
+                CreatedAt        TEXT    NOT NULL
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS transcription_jobs (
+                JobId                TEXT    NOT NULL PRIMARY KEY,
+                MediaFileId          TEXT    NOT NULL,
+                SessionId            TEXT    NULL,
+                Title                TEXT    NOT NULL DEFAULT '',
+                Mode                 INTEGER NOT NULL DEFAULT 0,
+                ModelId              TEXT    NOT NULL DEFAULT '',
+                AudioStreamIndex     INTEGER NULL,
+                RunDiarization       INTEGER NOT NULL DEFAULT 1,
+                DiarizationCountMode INTEGER NOT NULL DEFAULT 0,
+                ManualSpeakerCount   INTEGER NOT NULL DEFAULT 0,
+                ClusteringThreshold  REAL    NOT NULL DEFAULT 0.5,
+                Status               INTEGER NOT NULL DEFAULT 0,
+                Phase                INTEGER NOT NULL DEFAULT 0,
+                ProcessedMs          INTEGER NOT NULL DEFAULT 0,
+                TotalMs              INTEGER NOT NULL DEFAULT 0,
+                SegmentsEmitted      INTEGER NOT NULL DEFAULT 0,
+                QueuedAt             TEXT    NOT NULL,
+                StartedAt            TEXT    NULL,
+                FinishedAt           TEXT    NULL,
+                Attempts             INTEGER NOT NULL DEFAULT 0,
+                ResumeCount          INTEGER NOT NULL DEFAULT 0,
+                Error                TEXT    NULL,
+                Warning              TEXT    NULL
+            );
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_transcription_jobs_queue ON transcription_jobs (Status, QueuedAt);"
         })
     };
 

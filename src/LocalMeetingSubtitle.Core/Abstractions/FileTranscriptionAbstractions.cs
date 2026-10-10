@@ -22,6 +22,10 @@ public readonly record struct FileTranscriptionProgress(
 /// One file-transcription job. The caller owns <see cref="Engine"/> (initialized for the chosen
 /// mode) and <see cref="TranscriptionOptions"/>: resolving a transcription mode needs the ASR
 /// project, which this Core service must not depend on.
+///
+/// When <see cref="SessionId"/> is null the run creates a new session; when it is set the run
+/// <b>resumes</b> that session, restarting the decode at the end of the last committed segment and
+/// continuing the sequence numbering.
 /// </summary>
 public sealed record FileTranscriptionRequest(
     string InputPath,
@@ -33,7 +37,8 @@ public sealed record FileTranscriptionRequest(
     int ManualSpeakerCount = 0,
     double ClusteringThreshold = 0.5,
     DialogueAssemblyOptions? DialogueOptions = null,
-    string? Title = null);
+    string? Title = null,
+    string? SessionId = null);
 
 public sealed class FileTranscriptionResult
 {

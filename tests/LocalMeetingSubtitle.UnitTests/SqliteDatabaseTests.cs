@@ -23,14 +23,15 @@ public sealed class SqliteDatabaseTests
 
         await using var schemaVersion = connection.CreateCommand();
         schemaVersion.CommandText = "SELECT COUNT(*) FROM schema_version;";
-        Assert.Equal(4, Convert.ToInt32(await schemaVersion.ExecuteScalarAsync()));
+        Assert.Equal(5, Convert.ToInt32(await schemaVersion.ExecuteScalarAsync()));
 
         await using var tables = connection.CreateCommand();
         tables.CommandText =
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN " +
             "('sessions','segments','metrics','hotword_groups','hotwords','correction_rules','settings'," +
-            "'diarization_runs','speakers','speaker_intervals','speaker_assignments','audio_assets');";
-        Assert.Equal(12, Convert.ToInt32(await tables.ExecuteScalarAsync()));
+            "'diarization_runs','speakers','speaker_intervals','speaker_assignments','audio_assets'," +
+            "'media_files','transcription_jobs');";
+        Assert.Equal(14, Convert.ToInt32(await tables.ExecuteScalarAsync()));
     }
 
     [Fact]
@@ -43,7 +44,7 @@ public sealed class SqliteDatabaseTests
         await using var connection = await temp.Database.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM schema_version;";
-        Assert.Equal(4, Convert.ToInt32(await command.ExecuteScalarAsync()));
+        Assert.Equal(5, Convert.ToInt32(await command.ExecuteScalarAsync()));
     }
 
     [Fact]

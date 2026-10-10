@@ -1,9 +1,10 @@
 # Architecture — V0.5: offline file transcription + role-tagged dialogue
 
 > **Status: work in progress.** **Phase 0** (FFmpeg tooling + licensing), **Phase 1** (media decode
-> layer), **Phase 2** (segmented long-audio offline ASR) and **Phase 3** (role-tagged dialogue:
-> diarization of the decoded file + transcript/speaker alignment) are implemented and verified;
-> **Phases 4–8 are NOT_STARTED**. All target-hardware acceptance (Windows 11 + Core Ultra 7 155H) is
+> layer), **Phase 2** (segmented long-audio offline ASR), **Phase 3** (role-tagged dialogue:
+> diarization of the decoded file + transcript/speaker alignment) and **Phase 4** (job queue +
+> checkpoint/resume, migration 5) are implemented and verified;
+> **Phases 5–8 are NOT_STARTED**. All target-hardware acceptance (Windows 11 + Core Ultra 7 155H) is
 > **BLOCKED / NOT_TESTED** because that machine is not available — every fact below was measured on
 > the Windows 10 dev host.
 >
@@ -29,7 +30,7 @@ Everything is offline and CPU-only, exactly like the live path.
 | Entry | Behaviour | Status |
 | --- | --- | --- |
 | **Live subtitles** (existing) | WASAPI loopback captures system playback → streaming ASR → live subtitles → SQLite. Captures *what is playing right now*. | **Unchanged** — V0.5 adds nothing to this path, and the V0.4 regression tests still pass (see §8). |
-| **File transcription** (new) | User selects a local media file → FFmpeg decodes it to 16 kHz mono PCM → VAD segmentation → per-segment offline ASR → diarization → role-tagged dialogue → export. Works on *an already-recorded file*. | **Phase 0–3 done.** Media decode, segmented long-audio offline ASR (timestamped segments, three modes) and role-tagged dialogue (diarization of the decoded file + transcript/speaker alignment) are done; the job queue, editor UI, dialog export and packaging are not started. |
+| **File transcription** (new) | User selects a local media file → FFmpeg decodes it to 16 kHz mono PCM → VAD segmentation → per-segment offline ASR → diarization → role-tagged dialogue → export. Works on *an already-recorded file*. | **Phase 0–4 done.** Media decode, segmented long-audio offline ASR (timestamped segments, three modes), role-tagged dialogue (diarization of the decoded file + transcript/speaker alignment) and the **resumable job queue** (migration 5) are done; the editor UI, dialog export and packaging are not started. |
 
 The two entries are fully independent: the file path never touches the capture pipeline, and it is
 designed (see §7) so it can never starve live ASR.
@@ -44,7 +45,7 @@ declares a small set of new `Core` contracts; the rest of `Core` is **reused**.
 | `LocalMeetingSubtitle.Core` | existing project | Contracts + domain model, audio math, live pipeline, hotwords/correction, diarization contracts + services | unchanged |
 | `LocalMeetingSubtitle.Audio` | existing project | WASAPI loopback capture; `NaudioAudioFileLoader` | unchanged |
 | `LocalMeetingSubtitle.Asr` | existing project | sherpa-onnx engine; `SherpaOfflineSpeakerDiarizer` (V0.4) | unchanged |
-| `LocalMeetingSubtitle.Storage` | existing project | SQLite (WAL) + repositories (schema is still at **migration 4**) | unchanged |
+| `LocalMeetingSubtitle.Storage` | existing project | SQLite (WAL) + repositories (schema is at **migration 5** since Phase 4) | unchanged |
 | `LocalMeetingSubtitle.Export` | existing project | TXT / SRT / Markdown / CSV formatters | unchanged |
 | `LocalMeetingSubtitle.Diagnostics` | existing project | CPU / memory monitor | unchanged |
 | `LocalMeetingSubtitle.ModelDownloads` | existing project | the only `System.Net.Http` assembly (isolated) | unchanged |
@@ -57,7 +58,7 @@ New `Core` contracts / models:
 | `Core/Models/MediaModels.cs` | models | `MediaKind`, `AudioStreamInfo`, `MediaInfo`, `PcmBlock`, `MediaDecodeRequest` | **DONE (Phase 1)** |
 | `Core/Abstractions/MediaAbstractions.cs` → `IMediaDecodeService` | contract | probe + streaming decode of a local file | **DONE (Phase 1)** |
 | `MediaDecodeException` / `MediaErrorKind` / `MediaToolPaths` | types | machine-readable decode failure + resolved tool paths | **DONE (Phase 1)** |
-| `ITranscriptionJobService` | contract (planned) | own a file-transcription **job**: queue, progress, cancel, checkpoint/resume, status | **NOT_STARTED (Phase 4)** |
+| `ITranscriptionJobService` | contract | own a file-transcription **job**: queue, progress, cancel, checkpoint/resume, status | **DONE (Phase 4)** |
 | `ITranscriptAlignmentService` | contract | align the offline transcript's segments with diarization intervals into a role-tagged dialogue | **DONE (Phase 3)** |
 | `IFileTranscriptionService` | contract | run one file end-to-end: admit → probe → decode (tee'd) → ASR → persist → diarize → align | **DONE (Phase 3)** |
 | `ISpeakerDiarizationService` (from V0.4) | **reused** | run offline speaker diarization over decoded audio | reuse; file-job wiring **DONE (Phase 3)** |
@@ -89,6 +90,21 @@ New **Phase 3** types (role-tagged dialogue; detailed in §6.5):
 | `Core/Abstractions/FileTranscriptionAbstractions.cs` | contract + models | `IFileTranscriptionService`, `FileTranscriptionPhase`, `FileTranscriptionProgress`, `FileTranscriptionRequest`, `FileTranscriptionResult` | **DONE (Phase 3)** |
 | `Core/Transcription/FileTranscriptionService.cs` | component | run one file end-to-end (admission → probe → tee decode → ASR → persist → diarize → align) | **DONE (Phase 3)** |
 | `Core/Audio/PcmWavWriter.cs` | component | **synchronous** incremental PCM16 WAV writer (patches RIFF/`data` sizes on `Dispose`) for the diarizer's temp file | **DONE (Phase 3)** |
+
+New **Phase 4** types (job queue + checkpoint/resume; detailed in §6.6):
+
+| Type | Kind | Purpose | Status |
+| --- | --- | --- | --- |
+| `Core/Models/JobModels.cs` | models | `enum TranscriptionJobStatus { Queued, Running, Paused, Succeeded, Failed, Cancelled, Interrupted }`; `MediaFileRecord`; `TranscriptionJob` (all job columns + `Progress`, `IsFinished`, `IsRunnable`); `sealed record TranscriptionJobRequest(InputPath, TranscriptionMode Mode, string ModelId, int? AudioStreamIndex, bool RunDiarization, string? Title, SpeakerCountMode DiarizationCountMode, int ManualSpeakerCount, double ClusteringThreshold)` | **DONE (Phase 4)** |
+| `Core/Abstractions/JobAbstractions.cs` | contracts | `IMediaFileRepository`, `ITranscriptionJobRepository`, `delegate Task<FileTranscriptionRequest> TranscriptionJobResolver(TranscriptionJob job, CancellationToken ct)`, and `ITranscriptionJobService` (queue/progress/cancel/resume/recover/drain; also `IAsyncDisposable`) | **DONE (Phase 4)** |
+| `Storage/SqliteMediaFileRepository.cs`, `Storage/SqliteTranscriptionJobRepository.cs` | components | hand-written repositories over the migration-5 tables, same style as `SqliteAudioAssetRepository` | **DONE (Phase 4)** |
+| `Core/Transcription/TranscriptionJobService.cs` | component | one FIFO worker on a dedicated below-normal-priority thread; enqueue, cooperative cancel, resume/recover, drain | **DONE (Phase 4)** |
+| `Core/Transcription/OfflineTranscriptionEngine.cs` (modified) | component | optional awaited `Func<OfflineTranscriptSegment, CancellationToken, Task>? onSegment` so a caller persists each segment before more audio is consumed (`null` is byte-identical to Phase 2) | **DONE (Phase 4)** |
+| `Core/Transcription/FileTranscriptionService.cs` (modified) | component | **incremental persistence** (create/reuse the session, append a `segments` row per segment) and **resume** from the committed `segments` rows | **DONE (Phase 4)** |
+| `Core/Models/MediaModels.cs` (modified) | models | `MediaDecodeRequest.StartOffset` (`TimeSpan`) | **DONE (Phase 4)** |
+| `Media/FFmpegMediaDecodeService.cs` (modified) | component | input seeking (`-accurate_seek` + `-ss <seconds>` **before** `-i`); emitted `PcmBlock.Start` stays absolute | **DONE (Phase 4)** |
+| `App/App.xaml.cs` (modified) | composition root | registers `IMediaFileRepository`, `ITranscriptionJobRepository`, `ITranscriptionJobService`; `ResolveJobRequestAsync` builds a fresh recognizer per attempt; `RecoverUnfinishedAsync()` at start | **DONE (Phase 4)** |
+| `tools/FileTranscribe` (modified) | tool | `--jobs [--file] [--db] [--interrupt-after N] [--resume-job <id>] [--list-jobs]` | **DONE (Phase 4)** |
 
 ## 4. Media data flow (Phase 1, implemented)
 
@@ -123,27 +139,34 @@ Decode details confirmed in the code and in the integration tests:
   `UseShellExecute=false` — never a shell, never string concatenation — so Unicode, spaces and long
   paths are safe (verified by a Unicode-with-space decode test).
 
-## 5. SQLite migration 5 (deferred to Phase 4 — NOT_STARTED)
+## 5. SQLite migration 5 (Phase 4 — DONE)
 
-The database schema is **still at migration 4** (V0.4 speaker diarization). **Phase 2 changed no
-schema:** `OfflineTranscriptionEngine` returns results **in memory**, and a file transcript can
-already be persisted today by creating **one `MeetingSession`** and appending **one `segments` row per
-result** through the existing `SqliteSubtitleRepository` (`StartOffsetMs` / `EndOffsetMs`). V0.5 will
-add a **migration 5**, purely additive in the same style as migration 4, for the file-transcription
-job/queue/checkpoint model — **deferred to Phase 4**. **None of these tables exist yet.**
+The database schema is now at **migration 5** (`file transcription job schema`), purely additive in
+the same style as migration 4 (lower-case table names, `CREATE TABLE IF NOT EXISTS`, **no foreign
+keys**). The transcript still **reuses** the existing `segments` table and the speaker reference still
+reuses `speaker_assignments`; migration 5 only adds the file/job/orchestration layer that had no V0.4
+equivalent.
 
-| Table (planned) | Purpose |
-| --- | --- |
-| `MediaFile` | one imported media file: path, kind, container, duration, size, audio-stream selection, probe result |
-| `TranscriptionJob` | one file-transcription job: state (queued/running/done/failed/cancelled), progress, timings, model/options, error |
-| `TranscriptionChunk` | per-chunk decode/ASR work unit (offset, sample range, status) — the basis for checkpoint/resume |
-| `TranscriptSegment` | one transcribed segment with global timestamps (start/end), text, speaker reference |
-| `JobCheckpoint` | resumable state of a job (last completed chunk, offsets) for restart-after-crash |
+| Table | Columns | Purpose |
+| --- | --- | --- |
+| `media_files` | `MediaFileId` TEXT PK, `Path`, `FileName`, `Kind` INTEGER, `ContainerFormat`, `DurationMs` INTEGER, `SizeBytes` INTEGER, `AudioStreamIndex` INTEGER NULL, `CreatedAt` TEXT | one imported media file: path, kind, container, duration, size, audio-stream selection, probe result |
+| `transcription_jobs` | `JobId` TEXT PK, `MediaFileId`, `SessionId` TEXT NULL, `Title`, `Mode` INTEGER, `ModelId`, `AudioStreamIndex` INTEGER NULL, `RunDiarization` INTEGER, `DiarizationCountMode` INTEGER, `ManualSpeakerCount` INTEGER, `ClusteringThreshold` REAL, `Status` INTEGER, `Phase` INTEGER, `ProcessedMs` INTEGER, `TotalMs` INTEGER, `SegmentsEmitted` INTEGER, `QueuedAt`, `StartedAt` NULL, `FinishedAt` NULL, `Attempts` INTEGER, `ResumeCount` INTEGER, `Error` NULL, `Warning` NULL | one file-transcription job: state, phase, progress snapshot, model/options, timings, attempts/resumes, error |
 
-> The file-job transcript is expected to **reuse** the existing `segments`/`speakers`/
-> `speaker_assignments` tables where the data is the same shape; the migration-5 tables above are the
-> job/orchestration layer that has no V0.4 equivalent. The exact split is a Phase 4 design decision
-> and is not fixed here.
+Plus an index `ix_transcription_jobs_queue (Status, QueuedAt)` — the queue is read in `Status` then
+`QueuedAt` order.
+
+**Deliberately NOT created** (diverging from the table list this section previously pre-declared):
+
+- `transcription_chunks` — the VAD is a **streaming state machine** with no upfront chunk plan, so
+  there is no chunk work-unit to persist.
+- `transcript_segments` — the transcript **reuses the existing `segments` table**, and the speaker
+  reference reuses `speaker_assignments` (no parallel table).
+- `job_checkpoints` — **the resume cursor is derived from the committed `segments` rows**
+  (`MAX(EndOffsetMs)`, `MAX(SequenceNumber)+1`), so it can never drift ahead of the data that actually
+  exists. `ProcessedMs` / `SegmentsEmitted` on the job row are only a **throttled display snapshot**
+  (written at most every 2 s) and are **never** used to resume.
+
+> See [`DECISIONS.md`](DECISIONS.md) D17 for why the cursor is derived rather than stored.
 
 ## 6. Segmented offline ASR (Phase 2 — DONE) → role-tagged dialogue (Phase 3 — DONE)
 
@@ -267,15 +290,81 @@ ids**, and an **OR-propagated `NeedsConfirmation`**. Segments whose assignment i
 count / segment count over **known** speakers, ordered by speaking time descending (see
 [`DECISIONS.md`](DECISIONS.md) D16).
 
+### 6.6 Job queue + checkpoint/resume (Phase 4 — DONE)
+
+A file transcription now runs as a **background job** through `TranscriptionJobService`
+(`Core/Transcription/`), so several files can be queued and an interrupted job can be resumed.
+
+```
+enqueue (TranscriptionJobRequest + MediaInfo)
+        |  writes media_files + transcription_jobs rows; status = Queued   (enqueuing only writes rows)
+        v
+one FIFO worker on a dedicated Thread { IsBackground, Priority = BelowNormal, Name = "file-transcription-worker" }
+        |  dequeues the oldest runnable job (Status, QueuedAt) -> status = Running
+        v
+TranscriptionJobResolver(job, ct)  ->  a fresh FileTranscriptionRequest  (rebuilt from the stored row)
+        |  a fresh recognizer per attempt; the job service disposes the engine it is given
+        v
+FileTranscriptionService.RunAsync(request)  ->  incremental persistence
+        |  probe -> create (or reuse request.SessionId) the MeetingSession
+        |  decode -> ASR, persisting one segments row per produced segment BEFORE more audio is consumed
+        v
+success -> Succeeded / session Completed;  cancel -> Cancelled / session Paused;
+decode failure -> Failed / session Aborted
+```
+
+**Enqueuing only writes rows.** Every run rebuilds its `FileTranscriptionRequest` from the stored job
+through the injected `TranscriptionJobResolver`, so a job **survives a restart** — the resolver
+resolves the mode from the job row (via `TranscriptionModeCatalog`), creates and initializes a
+**fresh recognizer per attempt** (the job service disposes the engine it is given), and passes the
+job's `SessionId`. `App.xaml.cs` wires the same seam (`ResolveJobRequestAsync`), and
+`StartInitializationAsync` calls `RecoverUnfinishedAsync()`.
+
+**Incremental persistence (the resume seam).** `OfflineTranscriptionEngine.TranscribeAsync` gained an
+optional **awaited** `Func<OfflineTranscriptSegment, CancellationToken, Task>? onSegment` so the
+caller can persist each segment **before more audio is consumed** (passing `null` is byte-identical to
+the Phase 2 behaviour). `FileTranscriptionService` uses it to append **one `segments` row per produced
+segment**; after a successful probe it creates the `MeetingSession`, or, when
+`FileTranscriptionRequest.SessionId` is set, **reuses** it.
+
+**The resume cursor is derived, never stored.** On a resume the service derives
+`resumeFrom = MAX(EndOffsetMs)` and `startSequence = MAX(SequenceNumber)+1` from the **committed
+`segments` rows**, seeks the decode there, and sets the session back to `Recording`. Because the cursor
+is computed from the data that actually exists, it can never run ahead of it. `ProcessedMs` /
+`SegmentsEmitted` on the job row are a throttled (≥ 2 s) **display** snapshot only — **never** the
+cursor (see [`DECISIONS.md`](DECISIONS.md) D17/D18).
+
+**Seeking — `-ss` before `-i`.** `MediaDecodeRequest` gained `TimeSpan StartOffset`; when it is
+non-zero, `FFmpegMediaDecodeService` inserts `-accurate_seek` and `-ss <seconds>` **before** `-i`
+(*input* seeking: O(1) instead of decoding and discarding the prefix) and offsets every emitted
+`PcmBlock.Start` by it, so positions stay **absolute** on the media timeline. The temporary staging WAV
+for diarization is only tee'd when the run starts at offset zero; a **resumed** run rebuilds the
+whole-file WAV first with one extra decode-only pass (see D19).
+
+**Cancel / resume / recover / drain.** `CancelAsync` is **cooperative** (a queued job is marked
+`Cancelled` immediately; the caller/composition root owns the recognizer). `ResumeAsync` re-queues the
+job — the file service resumes from committed data automatically. `RecoverUnfinishedAsync` marks jobs
+left `Running` by a previous session as `Interrupted`. `DrainAsync` processes the queue
+**synchronously** (tests/CLI). Queue order is FIFO on `QueuedAt`, made **strictly increasing** on
+enqueue (`NextQueuedAt`) so several same-tick enqueues still order deterministically. Phase 4 ships
+**no UI** (Phase 5 owns the dialogue editor); the queue is exercised through `tools/FileTranscribe
+--jobs` and the tests.
+
 ## 7. Threading / resource rules
 
 The prime rule: **file transcription must never starve live ASR.**
 
-- **Separate thread, below-normal priority.** The whole file job (probe → decode → ASR →
-  diarization) runs off the UI thread and off the capture/ASR worker threads, on a dedicated thread
-  with `Priority = BelowNormal` — the same pattern V0.4 uses for diarization.
-- **One job at a time.** A `SemaphoreSlim(1, 1)` admits a single file job; jobs queue (Phase 4)
-  rather than run concurrently.
+- **One queue, one worker thread, below-normal priority.** `TranscriptionJobService` owns a single
+  **FIFO queue** and runs **one job at a time** on a dedicated
+  `Thread { IsBackground = true, Priority = ThreadPriority.BelowNormal, Name = "file-transcription-worker" }`,
+  created lazily by `StartAsync` — the same pattern V0.4 uses for diarization. A job enqueued while
+  another runs waits in the queue rather than running concurrently.
+- **Thread-continuation caveat (honest).** The worker thread is created with
+  `Priority = BelowNormal`, but **after the first real `await` inside a run the continuations execute
+  on the thread pool**, so the priority hint mainly covers process start-up; the queued work is **not**
+  guaranteed to stay at below-normal priority end-to-end. The real isolation from live ASR is
+  structural — **one job at a time**, low thread caps, and **separate ffmpeg child processes**. Treat
+  the "below-normal priority" claim as **aspirational**, not a measured guarantee.
 - **Low thread cap.** Decode children (ffmpeg/ffprobe) and any offline inference use a small,
   bounded CPU-thread budget (the V0.4 diarizer already clamps to `min(ProcessorCount/4, 4)`; the ASR
   auto-thread policy caps at 4). The OS scheduler therefore preempts a file job in favour of live
@@ -299,7 +388,7 @@ The prime rule: **file transcription must never starve live ASR.**
 | **1** | Media decode layer: `IMediaDecodeService`, `LocalMeetingSubtitle.Media` (probe + streaming PCM), DI registration, integration tests | **DONE** |
 | **2** | Segmented long-audio offline ASR (VAD / energy segmentation + per-segment sherpa-onnx offline decode + global timestamps + three-mode catalog; see §6) | **DONE** |
 | 3 | Role-tagged dialogue: wire `ISpeakerDiarizationService` + new `ITranscriptAlignmentService` for file jobs (`IFileTranscriptionService` / `FileTranscriptionService`, `PcmWavWriter`, `DialogueModels`; see §6.5) | **DONE** |
-| 4 | Job queue + checkpoints/resume (`ITranscriptionJobService`, migration 5) | **NOT_STARTED** |
+| 4 | Job queue + checkpoints/resume (`ITranscriptionJobService`, migration 5) | **DONE** |
 | 5 | Dialogue editor UI (rename/merge/reassign turns) | **NOT_STARTED** |
 | 6 | Export for file jobs: TXT / Markdown / CSV / SRT / **DOCX** | **NOT_STARTED** |
 | 7 | UX / performance polish | **NOT_STARTED** |
@@ -307,7 +396,7 @@ The prime rule: **file transcription must never starve live ASR.**
 
 ## 9. What is verified vs. not
 
-**Verified on the dev host (Phase 0–3):**
+**Verified on the dev host (Phase 0–4):**
 
 - FFmpeg provisioned as an **LGPL v3** build, pinned by URL + SHA-256, redistributable as a separate
   program (see [`LICENSES.md`](LICENSES.md)).
@@ -337,16 +426,49 @@ The prime rule: **file transcription must never starve live ASR.**
   plus shared doubles in `TestDoubles.cs`); integration **+2** (`FileTranscriptionDiarizationTests` —
   a real two-speaker file producing a 2-participant dialogue, and a video file `testmedia/two-tracks.mp4`
   audio track 1 proving the temp-WAV tee makes video diarizable).
-- **No regression**: unit **208**, integration **43**, performance 3 (+1 skipped), build 0 errors —
-  the existing live-subtitle suites are unaffected.
+- **Resumable job queue works (Phase 4):** `tools/FileTranscribe --jobs` on `testmedia/two-speakers.wav`
+  (High + `--diarize`) with a persistent `--db` was run **twice**: run 1 (`--interrupt-after 2`)
+  enqueued the job and deliberately cancelled it after **2 persisted segments**
+  (`STATUS=Queued` → `INTENTIONAL-INTERRUPT after 2 persisted segment(s)` →
+  `Cancelled segments=2 processed=0.0/14.1s attempts=1 resumes=0`); run 2 (`--resume-job <id>`) resumed
+  the **same session** — `Resuming session … at 4.540s (sequence 2)`, diarization ran over the whole
+  14.1 s file (`225592 samples`), and the job finished
+  `Succeeded segments=4 processed=14.1/14.1s attempts=2 resumes=1`. The session ended with **6
+  contiguous segments (0..5)** whose timeline matches an uninterrupted run (see §6.6 and the caveat
+  below).
+- **Phase 4 tests:** unit **208 → 222** (+14: `SqliteTranscriptionJobRepositoryTests`,
+  `TranscriptionJobServiceTests`, a resume test in `FileTranscriptionServiceTests`, plus shared
+  doubles); integration **43 → 46** (+3: `FileTranscriptionResumeTests` interrupt→resume, and
+  `MediaDecodeOffsetTests` for the seek).
+- **No regression**: unit **222**, integration **46**, performance 3 (+1 skipped), build 0 errors —
+  the existing live-subtitle suites are unaffected; `MainViewModel` is untouched.
 - Full detail and commands: [`FILE_TRANSCRIPTION_TEST_REPORT.md`](FILE_TRANSCRIPTION_TEST_REPORT.md).
 
 **NOT verified / NOT_STARTED (do not treat as done):**
 
-- **Phases 4–8 do not exist.** There is no `ITranscriptionJobService`, no migration-5 tables, no DOCX,
-  no dialogue editor, no drag-drop UI, no player. (Phases 2–3 exist but the file job is not wired to any
-  UI and returns results **in memory + the existing `segments`/`speaker_assignments` tables only** — no
-  job/queue persistence.)
+- **Phases 5–8 do not exist.** There is no DOCX export, no dialogue editor, no drag-drop UI, no player,
+  and no progress UI. (Phases 0–4 exist — the job queue and migration 5 are built — but the file job is
+  still **not wired to any UI**; it is exercised only through `tools/FileTranscribe` and the tests.)
+- **Phase 4 caveats (verified, but limited):**
+  - **Boundary segment text can differ (OPEN, P2).** The first segment produced immediately after a
+    resume can be transcribed slightly differently from an uninterrupted run, because the VAD/recognizer
+    restarts there with different leading context. Observed on the two-speaker fixture: the uninterrupted
+    run produced `四次班年度演。` for that window while the resumed run produced `年度演。`. Segment
+    **count, ordering, sequence numbers and timing are preserved** and nothing is duplicated — the
+    transcript is **structurally identical**, but **not** textually identical (every segment except the
+    one at the resume boundary matches exactly).
+  - **mp3 seeking is not sample-exact** (decoder delay, tens of ms). WAV/PCM seeking is bit-exact
+    (verified: mean sample difference < 1e-6); the emitted block positions stay absolute either way.
+  - **The below-normal thread priority is aspirational** (see §7): after the first `await`, continuations
+    run on the thread pool; the real isolation is one-job-at-a-time + low thread caps + separate ffmpeg
+    child processes.
+  - **A resumed job performs one extra decode-only pass** to rebuild the whole-file staging WAV for
+    diarization (a fresh job needs no extra pass).
+  - **`ProcessedMs` is a throttled (≥ 2 s) display snapshot**; the resume cursor is always the committed
+    `segments` data, never that field.
+  - **No UI** for file transcription yet (Phase 5 owns the dialogue editor);
+    `AppSettings.EnableVadSegmenting` remains unwired (P3-2). The isolation of a **concurrent** live + file
+    run is still **not measured** (BLOCKED on target hardware).
 - **Long-audio accuracy is unmeasured** — there is **no reference transcript**, so CER/WER is
   `NOT_TESTED`; only 56 s and 65 s fixtures exist (no > 1 h file).
 - **Diarization is a whole-file operation.** The V0.4 diarizer caps at **4 h** and

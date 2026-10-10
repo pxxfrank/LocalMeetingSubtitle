@@ -7,9 +7,10 @@
 > **候选发布 ≠ 已验收。** 本版本可交付评审与实机试用，但在目标笔记本上完成验收前，不应宣称已满足产品指标（延迟、CPU、内存、3 小时稳定性）。
 
 > **V0.5（离线文件转写 + 角色标注对话）进行中 / in progress：** 已加入「本地音频/视频导入 → 离线解码
-> （捆绑 **LGPL v3 FFmpeg**）→ 分段长音频离线 ASR（**Phase 0–3 完成**）：VAD 分段 → 逐段离线解码 →
+> （捆绑 **LGPL v3 FFmpeg**）→ 分段长音频离线 ASR（**Phase 0–4 完成**）：VAD 分段 → 逐段离线解码 →
 > 句级全局时间戳（**快速 / 标准 / 高精度**三种模式）→ **角色标注对话**（离线说话人分离 + 说话人对齐，
-> 产出「谁在什么时候说了什么」的对话轮次）；作业队列/断点续跑、对话编辑界面、DOCX 等导出、安装包打包均**未开始**。详见
+> 产出「谁在什么时候说了什么」的对话轮次）；**文件转写现在作为可续跑的后台作业队列运行**（中断/失败后可从已提交的分段断点续跑）。
+> 对话编辑界面、DOCX 等导出、安装包打包均**未开始**。详见
 > [`docs/ARCHITECTURE_V05.md`](docs/ARCHITECTURE_V05.md) 与 [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)（FT-01..FT-25）。
 
 ---
@@ -96,7 +97,7 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj `
 | 文档 | 语言 | 内容 |
 | --- | --- | --- |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | EN | 模块划分、数据流、线程模型、SQLite 表结构、接口清单、`ModelDownloads` 隔离原因 |
-| [`docs/ARCHITECTURE_V05.md`](docs/ARCHITECTURE_V05.md) | EN | **V0.5**：离线文件转写的目标、双入口、模块图（含新 `LocalMeetingSubtitle.Media`）、媒体数据流、规划中的迁移 5 表、线程/资源规则、Phase 0–8（状态）、已验 vs 未验 |
+| [`docs/ARCHITECTURE_V05.md`](docs/ARCHITECTURE_V05.md) | EN | **V0.5**：离线文件转写的目标、双入口、模块图（含新 `LocalMeetingSubtitle.Media`）、媒体数据流、迁移 5 表（作业队列 + 断点续跑）、线程/资源规则、Phase 0–8（状态）、已验 vs 未验 |
 | [`docs/MODEL_SELECTION.md`](docs/MODEL_SELECTION.md) | EN | 模型候选 A/B/C、HF 校验日志、基准结果、热词兼容性（暂定） |
 | [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) | EN | 测试分类、命令、`--filter` 用法、`ThreeHourSoak` 手动命令、最近一次结果 |
 | [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) | EN | 实测数据、方法学、目标 vs 实际、目标机未测量的说明 |
@@ -105,7 +106,7 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj `
 | [`docs/FILE_TRANSCRIPTION_TEST_REPORT.md`](docs/FILE_TRANSCRIPTION_TEST_REPORT.md) | EN | **V0.5** 文件转写真实测试报告（范围、环境、命令、结果表、未覆盖项均标 NOT_TESTED） |
 | [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) | EN | 已修复缺陷(P1/P2)、未决限制(P3)、阻塞项 |
 | [`docs/CODEX_PROGRESS.md`](docs/CODEX_PROGRESS.md) | EN | 阶段进度、构建/测试结果、后续任务、阻塞项、重要命令 |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | EN | ADR 风格架构决策 D1–D10 |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | EN | ADR 风格架构决策 D1–D20 |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | EN | 开发环境搭建、构建/测试/发布命令、如何添加模型 |
 | [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) | **中文** | 面向用户的使用与排查指南 |
 | [`LICENSE`](LICENSE) | — | 项目许可证（MIT） |

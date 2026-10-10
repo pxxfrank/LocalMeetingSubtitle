@@ -159,6 +159,48 @@ public sealed class FileTranscriptionServiceTests
         Assert.True(firstResult.Completed);
     }
 
+    [Fact]
+    public async Task Resume_ContinuesFromTheLastCommittedSegment()
+    {
+        await using var harness = await Harness.CreateAsync();
+
+        // Attempt 1 sees only the first utterance.
+        harness.Media.Blocks = harness.AllBlocks.Take(3).ToList();
+        var first = await harness.Service.RunAsync(harness.Request());
+
+        Assert.True(first.Completed);
+        var only = Assert.Single(first.Segments);
+        Assert.Equal("你好世界", only.Text);
+        Assert.NotNull(first.SessionId);
+
+        // Attempt 2 resumes the same session; the committed prefix must not be transcribed again.
+        harness.Media.Blocks = harness.AllBlocks;
+        int decodesBeforeResume = harness.Media.DecodeCalls;
+        var second = await harness.Service.RunAsync(harness.Request() with { SessionId = first.SessionId });
+
+        Assert.True(second.Completed);
+        Assert.Equal(first.SessionId, second.SessionId);
+        Assert.Equal("再见", Assert.Single(second.Segments).Text);
+
+        // The transcription pass of the resumed attempt was seeked to the end of the last committed
+        // segment (the extra request after it is the whole-file WAV rebuild for diarization).
+        Assert.Contains(
+            harness.Media.Requests.Skip(decodesBeforeResume),
+            r => Math.Abs(r.StartOffset.TotalSeconds - 3.0) < 0.01);
+
+        var stored = (await harness.Subtitles.GetSegmentsAsync(first.SessionId!))
+            .OrderBy(s => s.SequenceNumber).ToList();
+        Assert.Equal(2, stored.Count);
+        Assert.Equal(new[] { 0, 1 }, stored.Select(s => s.SequenceNumber).ToArray());
+        Assert.Equal("你好世界", stored[0].OriginalText);
+        Assert.Equal("再见", stored[1].OriginalText);
+        Assert.True(stored[1].StartOffset >= stored[0].EndOffset - TimeSpan.FromMilliseconds(1),
+            "the resumed segment must not overlap the committed one.");
+
+        // A resumed job has no whole-file staging WAV, so diarization rebuilds it with one extra pass.
+        Assert.Equal(decodesBeforeResume + 2, harness.Media.DecodeCalls);
+    }
+
     // ---- harness ---------------------------------------------------------------------------------
 
     private sealed class Harness : IAsyncDisposable
@@ -178,6 +220,7 @@ public sealed class FileTranscriptionServiceTests
         public ScriptedSegmentsAsrEngine Engine { get; private set; } = null!;
         public FileTranscriptionService Service { get; private set; } = null!;
         public OfflineTranscriptionOptions Options { get; } = new() { ModelId = "test-model" };
+        public IReadOnlyList<PcmBlock> AllBlocks { get; private set; } = Array.Empty<PcmBlock>();
 
         public static async Task<Harness> CreateAsync()
         {
@@ -187,7 +230,8 @@ public sealed class FileTranscriptionServiceTests
 
             harness.Subtitles = database.CreateSubtitleRepository();
             harness.Speakers = database.CreateSpeakerRepository();
-            harness.Media = new FakeMediaDecodeService(Info(), Blocks());
+            harness.AllBlocks = Blocks();
+            harness.Media = new FakeMediaDecodeService(Info(), harness.AllBlocks);
             harness.Diarization = new FakeDiarizationService();
             harness.Engine = new ScriptedSegmentsAsrEngine("你好世界", "再见");
             harness.Service = new FileTranscriptionService(

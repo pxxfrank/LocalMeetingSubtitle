@@ -78,17 +78,21 @@ internal sealed class ScriptedSegmentsAsrEngine : IAsrEngine
 internal sealed class FakeMediaDecodeService : IMediaDecodeService
 {
     private readonly MediaInfo _info;
-    private readonly IReadOnlyList<PcmBlock> _blocks;
 
     public FakeMediaDecodeService(MediaInfo info, IReadOnlyList<PcmBlock> blocks)
     {
         _info = info;
-        _blocks = blocks;
+        Blocks = blocks;
     }
+
+    /// <summary>The scripted blocks; settable so a test can vary the audio between attempts.</summary>
+    public IReadOnlyList<PcmBlock> Blocks { get; set; }
 
     public MediaDecodeException? ProbeError { get; set; }
     public int DecodeCalls { get; private set; }
     public MediaDecodeRequest? LastRequest { get; private set; }
+    /// <summary>Every decode request, in call order (a resume issues a transcription pass and, when diarizing, a WAV-rebuild pass).</summary>
+    public List<MediaDecodeRequest> Requests { get; } = new();
     public bool Cancelled { get; init; }
     /// <summary>Cancels mid-stream after the first block, to exercise cleanup paths.</summary>
     public CancellationTokenSource? CancelAfterFirstBlock { get; set; }
@@ -102,6 +106,7 @@ internal sealed class FakeMediaDecodeService : IMediaDecodeService
     {
         DecodeCalls++;
         LastRequest = request;
+        Requests.Add(request);
 
         if (Cancelled)
         {
@@ -109,9 +114,16 @@ internal sealed class FakeMediaDecodeService : IMediaDecodeService
         }
 
         int index = 0;
-        foreach (var block in _blocks)
+        foreach (var block in Blocks)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            // Honour an input seek the way ffmpeg's -ss does: skip everything before the offset.
+            if (block.Start < request.StartOffset)
+            {
+                continue;
+            }
+
             yield return block;
             if (index++ == 0)
             {
@@ -153,5 +165,36 @@ internal sealed class FakeDiarizationService : ISpeakerDiarizationService
         }
 
         return Result;
+    }
+}
+
+/// <summary>File-transcription double: records requests and returns a scripted result.</summary>
+internal sealed class FakeFileTranscriptionService : IFileTranscriptionService
+{
+    public bool IsBusy { get; set; }
+    public List<FileTranscriptionRequest> Requests { get; } = new();
+    public Func<FileTranscriptionRequest, CancellationToken, Task<FileTranscriptionResult>>? OnRun { get; set; }
+
+    public async Task<FileTranscriptionResult> RunAsync(
+        FileTranscriptionRequest request,
+        IProgress<FileTranscriptionProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        Requests.Add(request);
+        progress?.Report(new FileTranscriptionProgress(
+            FileTranscriptionPhase.Transcribe, 0.5, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), 1));
+
+        if (OnRun is not null)
+        {
+            return await OnRun(request, cancellationToken).ConfigureAwait(false);
+        }
+
+        return new FileTranscriptionResult
+        {
+            SessionId = request.SessionId ?? "session-" + Requests.Count,
+            Completed = true,
+            Diarized = request.RunDiarization,
+            AudioDuration = TimeSpan.FromSeconds(10)
+        };
     }
 }

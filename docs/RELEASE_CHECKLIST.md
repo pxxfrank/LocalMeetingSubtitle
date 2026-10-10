@@ -88,13 +88,14 @@ Legend: `PASS` = verified with evidence · `PARTIAL` = some sub-checks pass, oth
 > `NOT_TESTED` / `BLOCKED` — never `PASS`. The FT numbering and titles below are **reconstructed from
 > the V0.5 file-transcription spec** and anchored to concrete evidence, not invented results.
 >
-> **Scope note: V0.5 Phase 0–3 are implemented** — Phase 0–1 (FFmpeg tooling + media decode layer),
+> **Scope note: V0.5 Phase 0–4 are implemented** — Phase 0–1 (FFmpeg tooling + media decode layer),
 > **Phase 2 (segmented long-audio offline ASR: VAD segmentation → per-segment decode → global
-> timestamps, with a three-mode catalog)** and **Phase 3 (role-tagged dialogue: diarization of the
-> decoded file + transcript/speaker alignment)**. Phases 4–8 (job queue / checkpoints, dialogue editor
-> UI, file-job export, packaging) are **NOT_STARTED**, so their items are `NOT_TESTED`.
+> timestamps, with a three-mode catalog)**, **Phase 3 (role-tagged dialogue: diarization of the
+> decoded file + transcript/speaker alignment)** and **Phase 4 (job queue + checkpoint/resume;
+> migration 5)**. Phases 5–8 (dialogue editor UI, file-job export, packaging) are **NOT_STARTED**, so
+> their items are `NOT_TESTED`.
 > Where a V0.4 feature already covers the *equivalent capability*, the row says so ("重用 V0.4 …").
-> **Every Phase 2/3 result is dev-host only — no target hardware.**
+> **Every Phase 2/3/4 result is dev-host only — no target hardware.**
 >
 > Decode-level evidence: [`FILE_TRANSCRIPTION_TEST_REPORT.md`](FILE_TRANSCRIPTION_TEST_REPORT.md).
 > Design + phase status: [`ARCHITECTURE_V05.md`](ARCHITECTURE_V05.md).
@@ -109,21 +110,21 @@ Legend: `PASS` = verified with evidence · `PARTIAL` = some sub-checks pass, oth
 | FT-06 | 离线 ASR 输出句子级分段（utterance 边界） | `FileTranscriptionTests` | 输出逐句分段 | **Phase 2 已实现**：VAD 分段 + 逐段解码产出句级 `OfflineTranscriptSegment`（`Start`/`End`/`Text`）；`long-gaps.wav` → **10 段**、`long-continuous.wav` → **2 段** | `FILE_TRANSCRIPTION_TEST_REPORT.md` §4.5 | 开发主机 | **PASS (dev host)** |
 | FT-07 | 长音频（≥1 小时）分段 + VAD 离线转写 | 端到端长音频 | 正确分段并转写 | **VAD 分段已在 56 s / 65 s 素材上验证**（`long-gaps.wav` 10 段、单调不重叠；`long-continuous.wav` 2 段且 30 s 上限触发）；**但 ≥1 小时的素材未测试**（开发主机**无 >1 h 文件**） | `FILE_TRANSCRIPTION_TEST_REPORT.md` §4.5 | 开发主机 | **PARTIAL** |
 | FT-08 | 每条音频块/句子保留全局时间戳 | `FileTranscriptionTests` | 全局时间戳 | **Phase 2 已实现**：句级全局时间戳 = 首个 `PcmBlock.Start` + 累计采样索引；裁前导静音、接续段起点钳到前段终点（时间轴不重叠）；`long-gaps.wav` 10 段时间戳单调、互不重叠 | `FILE_TRANSCRIPTION_TEST_REPORT.md` §4.5 | 开发主机 | **PASS (dev host)** |
-| FT-09 | 文件任务中可选择要转写的音轨 | 端到端 | 选择音轨并转写 | 未执行（文件任务 UI/作业模型未构建）；**解码层已支持 `AudioStreamIndex`**（见 FT-04 附） | — | 开发主机 | **NOT_TESTED** |
-| FT-10 | 任务级错误处理（损坏/不支持媒体不静默、可跳过） | 端到端 | 明确报错/跳过 | 未执行（Phase 4）；**解码层已映射类型化错误** `FileNotFound/NotReadable/NoAudioTrack/StreamIndexOutOfRange` | `MediaDecodeTests`（`NoAudioTrack`/`FileNotFound`） | 开发主机 | **NOT_TESTED** |
-| FT-11 | 断点续跑（崩溃/中断后可恢复） | 端到端 | 可恢复 | 未执行（Phase 4 未开始；无 `JobCheckpoint` 表） | — | 开发主机 | **NOT_TESTED** |
+| FT-09 | 文件任务中可选择要转写的音轨 | 端到端 | 选择音轨并转写 | 未执行（无文件任务 **UI**；Phase 4 作业模型已携带 `AudioStreamIndex` 并在 `FileTranscriptionRequest` 中透传，但**无 UI/端到端演示**）；**解码层已支持 `AudioStreamIndex`**（见 FT-04 附） | — | 开发主机 | **NOT_TESTED** |
+| FT-10 | 任务级错误处理（损坏/不支持媒体不静默、可跳过） | 端到端 | 明确报错/跳过 | **Phase 4 已实现作业级错误**：作业行记录 `Error`/`Warning`，作业状态含 `Failed`/`Interrupted`；解码层映射类型化错误 `FileNotFound/NotReadable/NoAudioTrack/StreamIndexOutOfRange`。**由 `TranscriptionJobServiceTests` 与解码层测试覆盖**（未在损坏文件上做端到端 UI 演示） | `TranscriptionJobServiceTests`、`MediaDecodeTests`（`NoAudioTrack`/`FileNotFound`） | 开发主机 | **PASS (dev host)** |
+| FT-11 | 断点续跑（崩溃/中断后可恢复） | 端到端 | 可恢复 | **Phase 4 已实现**：`--interrupt-after 2` 中断（保留 2 条已提交分段）后，`--resume-job <id>` 从**已提交的 `segments`**（`MAX(EndOffsetMs)`/`MAX(SequenceNumber)+1`）精确续跑（`at 4.540s (sequence 2)`），最终 **6 条连续分段（0..5）**、`Succeeded attempts=2 resumes=1`。**无独立 `JobCheckpoint` 表——游标由 `segments` 派生**；被杀死进程遗留的 `Running` 作业由 `RecoverUnfinishedAsync` 标记 `Interrupted`（单测覆盖）。**演示为协作式取消，非真实进程杀灭。** | `FILE_TRANSCRIPTION_TEST_REPORT.md` §4.7、`FileTranscriptionResumeTests`、`TranscriptionJobServiceTests` | 开发主机 | **PASS (dev host)** |
 | FT-12 | 复用 V0.4 说话人分离对文件转写结果分角色 | 端到端 | 分角色标注 | **Phase 3 已接线**：`FileTranscriptionService` 在持久化转写后跑 V0.4 `SpeakerDiarizationService`（对解码 tee 出的临时 16 kHz WAV），`SpeakerDiarizationService` **未改动复用**。真实 2 人素材 `two-speakers.wav`（14.1 s）→ `2 speakers, 6/6 assigned, 0 need confirmation`；视频文件 `two-tracks.mp4`（音轨 1）也可分角色（证明 tee 路径使视频可分离） | `FileTranscriptionDiarizationTests`、`FILE_TRANSCRIPTION_TEST_REPORT.md` §4.6 | 开发主机 | **PASS (dev host, dev-host-only caveat)** |
 | FT-13 | 转写分段与说话人时间对齐 | 端到端 | 逐句归属 | **Phase 3 已实现**：`ITranscriptAlignmentService.Align(sessionId, 分段, 持久化的 speaker_assignments, speakers)` 逐段归属（按**持久化归属**组装，不二次对齐）。真实 2 人素材 → 6 段正确归属 2 位发言人；有单测 `TranscriptAlignmentServiceTests` | `TranscriptAlignmentServiceTests`、`FILE_TRANSCRIPTION_TEST_REPORT.md` §4.6 | 开发主机 | **PASS (dev host, dev-host-only caveat)** |
 | FT-14 | 生成带角色标签的对话（role-tagged dialogue） | 端到端 | 输出对话轮次 | **Phase 3 已实现**：`--diarize` 在 14.1 s 两人素材上产出 **6 段 → 2 轮**（A 合并其 2 段、B 合并其 4 段），`PARTICIPANTS=2 TURNS=2`、`RTF=0.2281`、`DIARIZED=True`；合并规则=同说话人 + 间隔 ≤ 2 s + ≤ 500 字 | `FILE_TRANSCRIPTION_TEST_REPORT.md` §4.6 | 开发主机 | **PASS (dev host, dev-host-only caveat)** |
 | FT-15 | 对话编辑界面（重命名/合并/改派） | UI 交互 | 可编辑并持久化 | 未执行（Phase 5 未开始）。**重用 V0.4**：发言人管理窗口已实现（SD-07/08/09，但仅 PARTIAL、未人工交互验证） | `SpeakerManagementWindow`（SD-07..09） | 开发主机 | **NOT_TESTED** |
-| FT-16 | 多文件任务队列 | 端到端 | 队列依次处理 | 未执行（Phase 4 未开始；无 `ITranscriptionJobService`） | — | 开发主机 | **NOT_TESTED** |
+| FT-16 | 多文件任务队列 | 端到端 | 队列依次处理 | **Phase 4 已实现**：`ITranscriptionJobService` 单 FIFO 工作线程，队列按 `(Status, QueuedAt)` 读取；`QueuedAt` 入队时用 `NextQueuedAt` 保证**严格递增**（同刻入队亦确定排序）。单文件 `--jobs` 端到端演示；多作业 FIFO 顺序由 `TranscriptionJobServiceTests` 覆盖 | `TranscriptionJobServiceTests`、`FILE_TRANSCRIPTION_TEST_REPORT.md` §4.7 | 开发主机 | **PASS (dev host)** |
 | FT-17 | 任务进度与状态展示（UI） | UI 交互 | 进度/状态可见 | 未执行（Phase 4/5） | — | 开发主机 | **NOT_TESTED** |
 | FT-18 | 文件任务导出 TXT / Markdown | 端到端 | 内容正确 | 未接线到文件任务（Phase 6）。**重用 V0.4**：TXT/Markdown 导出格式层已 **PASS**（AC-14、SD-11） | `SpeakerAwareExportTests` | 开发主机 | **NOT_TESTED** |
 | FT-19 | 文件任务导出 CSV / SRT | 端到端 | 内容正确 | 未接线到文件任务（Phase 6）。**重用 V0.4**：CSV/SRT 格式层已 **PASS**（AC-14、SD-11） | `SpeakerAwareExportTests` | 开发主机 | **NOT_TESTED** |
 | FT-20 | 解码/转写全程离线（无网络） | 静态 + `OfflineVerification` | 运行期无网络 | 解码路径（FFmpeg/sherpa-onnx 本地）无网络，`OfflineVerification` 仍 **5/5 PASS**；**完整文件任务流未构建** | `OfflineVerification` + 代码 | 开发主机 | **PARTIAL** |
-| FT-21 | 任务取消与失败清理 | 端到端 | 可取消、状态一致、清理 | 未执行（Phase 4）。**解码层已实现**：取消会杀死子进程树（`ProcessRunner` 注册 `CancellationToken`） | `ProcessRunner` | 开发主机 | **NOT_TESTED** |
+| FT-21 | 任务取消与失败清理 | 端到端 | 可取消、状态一致、清理 | **Phase 4 已实现**：`CancelAsync` 为**协作式取消**（排队作业立即置 `Cancelled`；运行作业在分段边界停止），取消后会话置 `Paused`，解码失败 → `Aborted`。中断演示：`Cancelled segments=2 attempts=1`；解码层取消仍杀死子进程树；CLI 在 `finally` 清理临时产物（DB/`-wal`/`-shm`、暂存 WAV） | `TranscriptionJobServiceTests`、`FILE_TRANSCRIPTION_TEST_REPORT.md` §4.7、`ProcessRunner` | 开发主机 | **PASS (dev host)** |
 | FT-22 | Unicode / 空格 / 长路径安全 | 集成测试 | 路径不影响解码 | `MediaDecodeTests.Decoding_a_unicode_path_with_a_space_succeeds`：`…\测试 folder\0 拷贝.mp3` 解码成功；**长路径/更多字符集未测** | `MediaDecodeTests` | 开发主机 | **PARTIAL** |
-| FT-23 | 不回归既有实时字幕功能 | 回归：既有单元/集成/性能测试 | 全通过 | **单元 208 / 集成 43 / 性能 3(+1 跳过)** 全通过，构建 0 错误；既有实时字幕套件未受影响（Phase 2 新增 31 单测 + 8 集成；Phase 3 新增 18 单测 + 2 集成） | 测试输出 | 开发主机 | **PASS** |
+| FT-23 | 不回归既有实时字幕功能 | 回归：既有单元/集成/性能测试 | 全通过 | **单元 222 / 集成 46 / 性能 3(+1 跳过)** 全通过，构建 0 错误；既有实时字幕套件未受影响，`MainViewModel` 未改动（Phase 2 新增 31 单测 + 8 集成；Phase 3 新增 18 单测 + 2 集成；Phase 4 新增 14 单测 + 3 集成） | 测试输出 | 开发主机 | **PASS** |
 | FT-24 | 目标硬件（Windows 11 + Core Ultra 7 155H）上的文件转写验收 | 目标机运行 | 达标 | 未执行（无该机器） | — | 目标硬件 (Win11) | **BLOCKED** |
 | FT-25 | 发布产物/安装包包含 FFmpeg | 解压/安装后运行 | 随包提供 FFmpeg | 未执行：**V0.4.0 安装包存在但不含 FFmpeg**；Phase 8 打包未开始（`fetch-ffmpeg.ps1` 仅供开发/构建期） | `installer/` + `tools/fetch-ffmpeg.ps1` | — | **NOT_TESTED** |
 
@@ -131,14 +132,18 @@ Legend: `PASS` = verified with evidence · `PARTIAL` = some sub-checks pass, oth
 
 - **Phase 0–2（已实现）**：FT-01/02/03/04 在**解码层** **PASS**；**Phase 2 把 FT-05/06/08 由 PARTIAL 升为
   PASS (dev host)**（分段长音频离线 ASR：VAD → 逐段解码 → 句级全局时间戳；三模式目录）；FT-07 **PARTIAL**
-  （56 s/65 s 已验证，**≥1 h 未测**）；FT-22 **PARTIAL**、FT-23 **PASS**（无回归，单元 208 / 集成 43）。
+  （56 s/65 s 已验证，**≥1 h 未测**）；FT-22 **PARTIAL**、FT-23 **PASS**（无回归，单元 222 / 集成 46）。
 - **Phase 3（已实现）**：**FT-12/13/14 由 NOT_TESTED 升为 PASS (dev host, dev-host-only caveat)**——复用 V0.4
   `SpeakerDiarizationService`（对临时 WAV，**未改动复用**）+ 新 `ITranscriptAlignmentService`（按**持久化归属**组装）；
   14.1 s 两人素材 → 2 发言人 / 2 轮；视频（`two-tracks.mp4` 音轨 1）亦可分角色。**仅 14.1 s 素材，长文件未测。**
-- **Phase 4–6（未开始）**：FT-09/10/11/15/16/17/18/19 为 **NOT_TESTED**；其中 FT-15/18/19 标注了
+- **Phase 4（已实现）**：**FT-10/11/16/21 由 NOT_TESTED 升为 PASS (dev host)**——迁移 5（`media_files`/
+  `transcription_jobs`）+ `ITranscriptionJobService` 单 FIFO 队列 + 增量持久化 + 由**已提交 `segments`** 派生的
+  断点续跑（`--interrupt-after 2` / `--resume-job` 演示：2 条已提交分段 → 从 `4.540s`（sequence 2）续跑 → 6 条连续分段）。
+  **游标不单独存储**（无 `JobCheckpoint` 表）；**演示为协作式取消，非真实进程杀灭**；**无 UI**（Phase 5）。
+- **Phase 5–6（未开始）**：FT-09/15/17/18/19 为 **NOT_TESTED**；其中 FT-15/18/19 标注了
   **可重用的 V0.4 等价能力**（发言人管理/导出格式），但**对文件任务均未接线**。
-- FT-20 **PARTIAL**（解码/转写路径离线，任务流未构建）；FT-21 **NOT_TESTED**。
+- FT-20 **PARTIAL**（解码/转写路径离线；完整任务流未构建 UI）；FT-09/17 **NOT_TESTED**（缺 UI）。
 - **FT-24/25**：目标硬件（Win11）**BLOCKED**、安装包内含 FFmpeg **NOT_TESTED**。
-- **Phase 2/3 全部结果均为开发主机（dev host）**：目标机 **BLOCKED/NOT_TESTED**；≥1 h 素材与 CER/WER **未测**；
+- **Phase 2/3/4 全部结果均为开发主机（dev host）**：目标机 **BLOCKED/NOT_TESTED**；≥1 h 素材与 CER/WER **未测**；
   高精度模式的 **SenseVoice 不支持模型级热词**（已核实）。
-- 因此 **V0.5 仍未完成**：Phase 0–3 可用，**不得宣称完整文件转写功能已达成**。
+- 因此 **V0.5 仍未完成**：Phase 0–4 可用，**不得宣称完整文件转写功能已达成**（无 UI、无导出、无打包；无目标机验收）。
