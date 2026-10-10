@@ -10,6 +10,7 @@ using LocalMeetingSubtitle.Core.Abstractions;
 using LocalMeetingSubtitle.Core.Hotwords;
 using LocalMeetingSubtitle.Core.Models;
 using LocalMeetingSubtitle.Core.Speakers;
+using LocalMeetingSubtitle.Core.Transcription;
 using LocalMeetingSubtitle.Diagnostics;
 using LocalMeetingSubtitle.Export;
 using LocalMeetingSubtitle.Media;
@@ -281,6 +282,21 @@ public partial class App : Application
             sp.GetRequiredService<ISubtitleRepository>(),
             sp.GetRequiredService<DiarizationEngineOptions>(),
             sp.GetRequiredService<IAudioAssetRepository>(),
+            sp.GetRequiredService<IAppLogger>()));
+
+        // ---- V0.5 file transcription (Phase 3: role-tagged dialogue) -------
+        // The transcript is persisted into the existing sessions/segments tables and diarized by the
+        // same service the live path uses; this seam only turns the result into dialogue turns.
+        services.AddSingleton<ITranscriptAlignmentService>(_ => new TranscriptAlignmentService());
+        services.AddSingleton<IFileTranscriptionService>(sp => new FileTranscriptionService(
+            sp.GetRequiredService<IMediaDecodeService>(),
+            sp.GetRequiredService<ISpeakerDiarizationService>(),
+            sp.GetRequiredService<ISubtitleRepository>(),
+            sp.GetRequiredService<ISpeakerRepository>(),
+            sp.GetRequiredService<ITranscriptAlignmentService>(),
+            // The job's temporary WAV lives under the recordings folder so the existing orphan
+            // sweep cleans it up if the process dies mid-job.
+            LocalDataPaths.RecordingsDirectory,
             sp.GetRequiredService<IAppLogger>()));
 
         return services.BuildServiceProvider();

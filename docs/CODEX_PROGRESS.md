@@ -3,14 +3,15 @@
 ## Current phase
 
 **V0.4.0 released (HEAD `554c8eb`); V0.5 "offline file transcription + role-tagged dialogue" is in
-progress — Phases 0–2 complete, Phase 3 not started.**
+progress — Phases 0–3 complete, Phase 4 not started.**
 
 The V0.4 live-subtitle product builds, its tests pass on the development host, a real model decodes
 Chinese, offline guarantees are verified, and a self-contained release artifact is produced. V0.5 adds
-a bundled **LGPL FFmpeg** media-decode layer (import audio/video → 16 kHz mono PCM) and **segmented
-long-audio offline ASR** (VAD → per-segment decode → global timestamps, with a three-mode catalog). The
-remaining V0.5 work (role-tagged dialogue, job queue, editor UI, export, packaging) is **not started**,
-and the remaining work overall is **acceptance on the real Windows 11 target hardware**.
+a bundled **LGPL FFmpeg** media-decode layer (import audio/video → 16 kHz mono PCM), **segmented
+long-audio offline ASR** (VAD → per-segment decode → global timestamps, with a three-mode catalog) and
+**role-tagged dialogue** (offline diarization of the decoded file + transcript/speaker alignment). The
+remaining V0.5 work (job queue, editor UI, export, packaging) is **not started**, and the remaining work
+overall is **acceptance on the real Windows 11 target hardware**.
 
 Status banner: **候选发布版本 — 待实机验收；V0.5（离线文件转写）进行中 / Release candidate (V0.4.0) — pending hardware acceptance; V0.5 (offline file transcription) in progress.**
 
@@ -858,3 +859,137 @@ dotnet run --project tools/FileTranscribe -- --file testmedia/long-gaps.wav --mo
 - **诚实边界：** 全部目标机（Win11 + Core Ultra 7 155H）验收仍 **BLOCKED/NOT_TESTED**；
   **长音频 CER/WER 因无参考文本未测**；仅 56 s / 65 s 素材，**无 >1 h 文件**；
   SenseVoice 高精度模式**不支持模型级热词**（已核实）。
+
+## Update — V0.5 Phase 3（角色标注对话，role-tagged dialogue）— DONE (2026-10-10)
+
+**目标：** 在 Phase 2 的离线转写之上，对**同一个文件**做**离线说话人分离**，再把转写分段与说话人对齐成
+**角色标注对话轮次**（「谁在什么时候说了什么」）。**Phase 3 完成；Phase 4 及以后未开始。**
+**实时字幕路径未改动**（无回归）。
+
+### 新增 / 修改的代码（全部增量）
+- **新增** `src/LocalMeetingSubtitle.Core/Audio/PcmWavWriter.cs` — **同步**增量 PCM16 WAV 写入器
+  （`Write(ReadOnlySpan<float>)`、`FrameCount`、`Duration`，`Dispose` 时回填 RIFF/`data` 大小）。**刻意同步**：
+  与实时采集的 `WaveRecordingService`（有界通道 + **丢帧**）不同，文件任务为拉取式，丢一帧就会**静默平移**整条
+  分离时间轴。
+- **新增** `src/LocalMeetingSubtitle.Core/Models/DialogueModels.cs` —
+  `readonly record struct TranscriptSegmentFact(long SegmentId, TimeSpan Start, TimeSpan End, string Text)`；
+  `DialogueTurn { string? SpeakerId; SpeakerName; SpeakerColorArgb; Start; End; Text; IReadOnlyList<long> SegmentIds; NeedsConfirmation; Duration; IsUnknownSpeaker }`；
+  `DialogueParticipant(SpeakerId, Name, ColorArgb, SpeakingTime, TurnCount, SegmentCount)`；
+  `DialogueTranscript { SessionId, Turns, Participants }`；
+  `sealed record DialogueAssemblyOptions { TimeSpan MaxGap = 2 s; int MaxTurnChars = 500; string UnknownSpeakerLabel = "未知发言人"; int UnknownSpeakerColorArgb = 0xFF808080 }`。
+- **新增** `src/LocalMeetingSubtitle.Core/Abstractions/TranscriptAlignmentAbstractions.cs` →
+  `ITranscriptAlignmentService.Align(sessionId, IReadOnlyList<TranscriptSegmentFact>, IReadOnlyDictionary<long, SpeakerAssignment>, IReadOnlyDictionary<string, Speaker>, DialogueAssemblyOptions?)` → `DialogueTranscript`。
+- **新增** `src/LocalMeetingSubtitle.Core/Speakers/TranscriptAlignmentService.cs` — **纯函数**。
+- **新增** `src/LocalMeetingSubtitle.Core/Abstractions/FileTranscriptionAbstractions.cs` —
+  `enum FileTranscriptionPhase { Decode, Transcribe, Diarize, Assemble }`；
+  `readonly record struct FileTranscriptionProgress(Phase, double Fraction, TimeSpan Processed, TimeSpan Total, int SegmentsEmitted)`；
+  `sealed record FileTranscriptionRequest(InputPath, IAsrEngine Engine, OfflineTranscriptionOptions, int? AudioStreamIndex, bool RunDiarization = true, SpeakerCountMode, int ManualSpeakerCount, double ClusteringThreshold, DialogueAssemblyOptions?, string? Title)`；
+  `FileTranscriptionResult { SessionId, Segments, Dialogue, AudioDuration, Elapsed, Rtf, Completed, Cancelled, Diarized, Error, Warning }`；
+  `IFileTranscriptionService { bool IsBusy; Task<FileTranscriptionResult> RunAsync(request, IProgress<FileTranscriptionProgress>?, CancellationToken) }`。
+- **新增** `src/LocalMeetingSubtitle.Core/Transcription/FileTranscriptionService.cs` — 端到端跑一个文件，
+  顺序严格：`SemaphoreSlim(1,1)` 准入（第二个并发任务被拒绝并返回错误结果）→ 探针 → **同一次解码中 tee** 到临时
+  16 kHz 单声道 WAV（ASR 仍流式，**整文件从不进内存**）→ Phase 2 `OfflineTranscriptionEngine` → 持久化 1 个
+  `MeetingSession` + 每个转写段 1 行 `segments`（**追加时就捕获分配的 `SegmentId`**，绝不信任会跳过空块的
+  `SourceChunkId`）→ V0.4 `SpeakerDiarizationService.RunAsync`（**未改动复用**）→ 读 `GetAssignmentsAsync` +
+  `GetSpeakersAsync` → `ITranscriptAlignmentService.Align` → 结果。临时 WAV 放在**调用方指定的暂存目录**
+  （App 传入 `LocalDataPaths.RecordingsDirectory`，故既有的 24 h 孤儿清扫可覆盖崩溃），`finally` 删除。
+  分离为**软失败**：忙/失败 → `Warning`、`Diarized=false`、全未知对话，**绝不抛异常**。调用方持有
+  `request.Engine`（**从不释放**）。另有长度校验：比对写入 WAV 的时长与转写音频时长，不一致则告警。
+- **修改** `src/LocalMeetingSubtitle.App/App.xaml.cs` — 注册 `ITranscriptAlignmentService` 与
+  `IFileTranscriptionService`（暂存目录 = `LocalDataPaths.RecordingsDirectory`）并加 `using LocalMeetingSubtitle.Core.Transcription;`。
+  **未改 `MainViewModel` / UI**（编辑器归 Phase 5）。
+- **修改** `tools/FileTranscribe/Program.cs` + `.csproj`（新增 `Audio` + `Storage` 引用）— 新增 `--diarize` 与
+  `--out <path>`。带 `--diarize` 时构建临时 SQLite 库 + 由 `DiarizationModelCatalog` 建 V0.4
+  `SpeakerDiarizationService`，跑完整 `FileTranscriptionService`，打印 `[hh:mm:ss.fff - hh:mm:ss.fff] Speaker: text`
+  轮次、`PARTICIPANT …` 行与 `PARTICIPANTS=/TURNS=`；`--json` 现在也输出 `participants`/`turns`。两条路径都在
+  `finally` 删除临时产物（DB + `-wal`/`-shm`、暂存 WAV）。
+- **修改** `tools/make-long-testmedia.ps1` — 现在还会生成 `testmedia/two-speakers.wav`（说话人 A ×2、间隔、
+  说话人 B ×2，来自 `models/_diar-eval/fangjun-sr-1.wav` + `leijun-sr-1.wav`；**451,262 字节 ≈ 14.1 s**）。
+
+### 关键决策（详见 `docs/DECISIONS.md` D14–D16）
+1. **临时 WAV（tee）+ 未改动复用 `SpeakerDiarizationService`（D14）。** V0.4 分离器是**整文件**引擎，吃**文件路径**、
+  经 `IAudioFileLoader`（NAudio）加载；NAudio 读不了视频容器（`.mp4/.mkv/.mov`），而文件任务必须支持视频。
+   既然 FFmpeg 已解码，任务就自己写 16 kHz 单声道 WAV，**未改动复用** V0.4 服务——不碰已测 V0.4 代码、不重复
+   run/speaker/interval/assignment 持久化、支持视频、ASR 仍流式。**被否决的替代方案：** 把整个解码文件缓存进内存
+   （4 h @16 kHz float32 ≈ **920 MB**）、给 `ISpeakerDiarizationService` 加基于采样的重载。
+   两个安全设计：**全新的同步写入器**（文件任务拉取式，丢帧会平移时间轴，故不丢帧、阻塞解码代）+ **丢帧/长度校验**
+   （比对写入 WAV 时长与转写音频时长，不一致告警）。
+2. **对话由持久化的 `speaker_assignments` 组装（D15），而不是再跑一次 `ISpeakerAlignmentService`。** 分离器的
+   **原始聚类索引 → speaker-id** 映射只在 `SpeakerDiarizationService` 内**临时**构建、**不持久化**；而
+   `speaker_assignments` 已按 segment id 存了**最终选定**的发言人（含 `NeedsConfirmation`/`Confidence`）。
+3. **对话合并规则（D16）。** `TranscriptAlignmentService` 把**同一说话人**的连续分段合并成一轮；在**换说话人**、
+   **间隔 > `MaxGap`（默认 2 s）**、或文本将超过 `MaxTurnChars`（默认 500）时**开新轮**。轮次取**首个 `Start`**、
+   **末个 `End`**、**拼接文本**、组成它的 segment id，以及 **OR 传播的 `NeedsConfirmation`**。归属缺失或
+   `SpeakerId` 为 null 的分段成为**未知轮**（`SpeakerId == null`、标签 `未知发言人`、灰 `0xFF808080`），
+   **不计入 `Participants`**；`Participants` 按已知识别说话人聚合说话时长/轮数/段数，**按时长降序**。**幂等**，
+   故 Phase 5 编辑器可重组。
+
+### 实测证据（开发主机：Windows 10 Pro，Xeon 64 逻辑核，64 GB）
+> 目标硬件（X1 Carbon Gen 12 / Core Ultra 7 155H）**不可用** —— 以下**未**在目标机验证。
+
+命令：`tools\FileTranscribe\bin\Debug\net8.0-windows\FileTranscribe.exe --file testmedia\two-speakers.wav --mode high --diarize --models-root models`
+
+结果（逐字，日记简化）：
+```text
+MODE=HighAccuracy DISPLAY=高精度 MODEL=sense-voice-small-int8 INSTALLED=True
+FILE=…\testmedia\two-speakers.wav  KIND=Audio CONTAINER=wav DURATION=14.100s AUDIO_STREAMS=1
+INFO  Diarization run d31ad9cf136c4742b9257ce35c2d0505: 225592 samples (00:00:14.0995000) from C:\Users\huawei\AppData\Local\Temp\dijob-7c91e0475a1b4fd9b1419f9f4b5a48d3.wav
+INFO  Diarization run d31ad9cf136c4742b9257ce35c2d0505 succeeded: 2 speakers, 6/6 assigned, 0 need confirmation
+INFO  File transcription finished: 6 segment(s), 2 turn(s), diarized=True, elapsed=3.2s.
+
+[00:00:00.260 - 00:00:04.540] A: 今天是星期二。今天是星期二。
+[00:00:05.580 - 00:00:13.820] B: 这是我第四次。办年度演讲。这是我第四次。办年度演讲。
+
+PARTICIPANT B (11514447cd124912939705c37ae57500) speaking=8.2s turns=1 segments=4
+PARTICIPANT A (e3e1918e142b41d98f82558f0de00cb0) speaking=4.3s turns=1 segments=2
+PARTICIPANTS=2 TURNS=2
+SEGMENTS=6  AUDIO_SECONDS=14.100  ELAPSED_SECONDS=3.216  RTF=0.2281
+DIARIZED=True COMPLETED=True CANCELLED=False
+```
+即素材前半（说话人 A，2 段）合并成一个 A 轮、后半（说话人 B，4 段）合并成一个 B 轮——正好 **2 个说话人、2 个轮次**。
+运行结束后，`%TEMP%` 中**没有**遗留 `dijob-*.wav`、`ft-*.db`/`-wal`/`-shm`，暂存目录中也**没有**遗留 WAV。
+
+### 已知限制（诚实记录）
+1. **分离是整文件操作：** V0.4 服务上限 **4 h**，且 `NaudioAudioFileLoader.LoadMono` 先建 `List<float>` 再
+   `.ToArray()`（4 h 约 **1.8 GB** 瞬态）。**> 2 h** 的文件视为高风险；记为开放限制（`KNOWN_ISSUES` P3-17）。
+2. **进程中途死亡**时临时 WAV 会留在 recordings 目录，直到**下次应用启动**清扫（24 h 孤儿清扫）；CLI 在 `finally`
+   删除（P3-18）。
+3. `DiarizationProgress.Fraction` 全程渲染 `0.0`（sherpa 回调报告未知总数）。这是**既有 V0.4 外观问题，非 Phase 3
+   引入**，且 `IProgress` 上报仍会到达（P3-19）。
+4. **文件转写仍无 UI 入口**（Phase 5 是对话编辑器）；`AppSettings.EnableVadSegmenting` 仍未接线（P3-2）。
+5. `SubtitleSegment.SpeakerName` 仍为瞬态；Phase 3 **不改持久化、不改导出格式化器**（Phase 6 负责对话导出）。
+
+### 测试
+- 单元 **190 → 208**（**+18**：新增 `TranscriptAlignmentServiceTests`、`FileTranscriptionServiceTests`，以及
+  `TestDoubles.cs` 中的共享测试替身）。
+- 集成 **41 → 43**（**+2**：新增 `FileTranscriptionDiarizationTests`——真实两人文件产出双人对话；以及视频文件
+  `testmedia/two-tracks.mp4` 音轨 1，证明临时 WAV tee 使视频可分离）。
+- **无实时路径回归**；`MainViewModel` 与实时管线未改动；构建 0 错误。
+
+### 验证命令
+```powershell
+$env:PATH = "$env:USERPROFILE\.dotnet;$env:PATH"
+dotnet build LocalMeetingSubtitle.sln -c Release
+dotnet test tests/LocalMeetingSubtitle.UnitTests/LocalMeetingSubtitle.UnitTests.csproj -c Debug
+dotnet test tests/LocalMeetingSubtitle.IntegrationTests/LocalMeetingSubtitle.IntegrationTests.csproj -c Debug
+
+# 两人测试素材（gitignore 的 testmedia/）
+./tools/make-long-testmedia.ps1
+
+# 角色标注对话（分离 + 对齐）
+tools\FileTranscribe\bin\Debug\net8.0-windows\FileTranscribe.exe --file testmedia\two-speakers.wav --mode high --diarize --models-root models
+```
+
+### 断点续跑信息（下一会话）
+- **当前阶段：** V0.5 Phase 3 完成；**Phase 4 未开始**。
+- **已完成：** Phase 0 FFmpeg 工具链；Phase 1 媒体解码层；Phase 2 长音频离线 ASR；Phase 3 角色标注对话
+  （临时 WAV tee + V0.4 分离复用 + 纯对齐器 `TranscriptAlignmentService`）。
+- **下一步（Phase 4）：** **作业队列 + 检查点/续跑**（`ITranscriptionJobService`）与 **迁移 5**
+  （`MediaFile`/`TranscriptionJob`/`TranscriptionChunk`/`TranscriptSegment`/`JobCheckpoint`）；数据库当前仍为
+  **迁移 4**，`FileTranscriptionService` 目前以 `SemaphoreSlim(1,1)` 单任务准入（无排队）。
+- **下一步要改的文件：** 新增 `Core/Abstractions/` 下的 `ITranscriptionJobService`、`Core/` 下作业/队列编排与检查点、
+  `Storage/` 的**迁移 5** 表与仓储；App DI 注册作业服务；测试在 `tests/` 下新增。
+- **下一验收目标：** `RELEASE_CHECKLIST` 的 **FT-09..FT-11**（音轨选择、任务级错误处理、断点续跑）。
+- **诚实边界：** 全部目标机（Win11 + Core Ultra 7 155H）验收仍 **BLOCKED/NOT_TESTED**；对话仅在 **14.1 s**
+  两人素材上验证，**未分离长文件**；**无参考对话**，未做对齐正确率核对；Phase 3 的限制见 `KNOWN_ISSUES`
+  P3-17/P3-18/P3-19。

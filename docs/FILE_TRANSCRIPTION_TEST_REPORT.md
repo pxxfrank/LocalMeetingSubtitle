@@ -1,23 +1,24 @@
-# File-Transcription Test Report (V0.5, Phase 0–2)
+# File-Transcription Test Report (V0.5, Phase 0–3)
 
-> **Scope note.** This report covers **what was actually executed** in the V0.5 Phase 0–2 work:
+> **Scope note.** This report covers **what was actually executed** in the V0.5 Phase 0–3 work:
 > provisioning FFmpeg, the `LocalMeetingSubtitle.Media` decode layer, the first end-to-end link
-> *file → FFmpeg PCM → sherpa-onnx → Chinese text*, and **Phase 2 segmented long-audio offline ASR**
-> (VAD segmentation → per-segment offline decode → global timestamps, across the three modes).
-> **Phases 3–8 are not started**, so nothing about role-tagged dialogue, the job queue, resume, DOCX,
-> or the dialogue editor is tested here. Every number is real; nothing is simulated, extrapolated, or
-> invented.
+> *file → FFmpeg PCM → sherpa-onnx → Chinese text*, **Phase 2 segmented long-audio offline ASR**
+> (VAD segmentation → per-segment offline decode → global timestamps, across the three modes), and
+> **Phase 3 role-tagged dialogue** (offline diarization of the decoded file + transcript/speaker
+> alignment into dialogue turns).
+> **Phases 4–8 are not started**, so nothing about the job queue, resume, DOCX, or the dialogue editor
+> is tested here. Every number is real; nothing is simulated, extrapolated, or invented.
 
 ## 1. Scope
 
 | In scope (executed) | Out of scope (NOT_TESTED) |
 | --- | --- |
-| FFmpeg provisioning + LGPL verification | Role-tagged dialogue / alignment (Phase 3) |
-| Real media **probe** (audio + video containers) | Job queue / checkpoint / resume (Phase 4) |
-| Real media **decode** to 16 kHz mono float32 PCM | Dialogue editor UI (Phase 5) |
-| **Offline ASR** over decoded audio → Chinese text | TXT/Markdown/CSV/SRT/DOCX export for file jobs (Phase 6) |
-| **Phase 2: segmented long-audio offline ASR** (VAD → per-segment decode → global timestamps; three modes; overlap de-dup) | Long-audio accuracy (CER/WER); target hardware |
-| Multi-track selection, no-audio, out-of-range, Unicode/space paths; no-regression of the live suites | Target-hardware acceptance (Win11); FFmpeg in the installer/ZIP (Phase 8) |
+| FFmpeg provisioning + LGPL verification | Job queue / checkpoint / resume (Phase 4) |
+| Real media **probe** (audio + video containers) | Dialogue editor UI (Phase 5) |
+| Real media **decode** to 16 kHz mono float32 PCM | TXT/Markdown/CSV/SRT/DOCX export for file jobs (Phase 6) |
+| **Offline ASR** over decoded audio → Chinese text | Long-audio accuracy (CER/WER); target hardware |
+| **Phase 2: segmented long-audio offline ASR** (VAD → per-segment decode → global timestamps; three modes; overlap de-dup) | Target-hardware acceptance (Win11); FFmpeg in the installer/ZIP (Phase 8) |
+| **Phase 3: role-tagged dialogue** (diarization of the decoded file + transcript/speaker alignment → dialogue turns; video diarizable via the temp-WAV tee) | Target hardware (Win11); a diarized file > 14.1 s; long-audio accuracy |
 
 ## 2. Environment
 
@@ -32,6 +33,8 @@
 | ASR model (Fast / Standard) | `streaming-zipformer-zh-14M` INT8 (streaming) |
 | ASR model (High accuracy) | `sense-voice-small-int8` (offline; `model.int8.onnx` **239,233,841 B** + `tokens.txt`, dir `models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17`; **sha256 not recorded**) |
 | Long fixtures (Phase 2) | `testmedia/long-continuous.wav` (**56.115 s** unbroken speech) and `testmedia/long-gaps.wav` (**65.115 s** — the same clip split by 1 s silences), built by `tools/make-long-testmedia.ps1` |
+| Two-speaker fixture (Phase 3) | `testmedia/two-speakers.wav` — **451,262 bytes ≈ 14.1 s** (speaker A ×2, gap, speaker B ×2), built by `tools/make-long-testmedia.ps1` from `models/_diar-eval/fangjun-sr-1.wav` + `leijun-sr-1.wav` |
+| Diarization models (Phase 3) | `sherpa-onnx-pyannote-segmentation-3-0` + `3dspeaker-eres2net-base-zh-16k` under `models/` (V0.4 models, reused) |
 
 No test in this report was run on the target laptop.
 
@@ -70,7 +73,11 @@ dotnet run --project tools/FileTranscribe -- --file testmedia/0.mp4 --mode high
 dotnet run --project tools/FileTranscribe -- --file testmedia/long-gaps.wav --mode high
 dotnet run --project tools/FileTranscribe -- --file testmedia/long-continuous.wav --mode high
 
-# 8) Build the long fixtures (gitignored testmedia/) from the bundled model's test_wavs/0.wav
+# 8) Phase 3: role-tagged dialogue (diarize + align), against the prebuilt exe
+tools\FileTranscribe\bin\Debug\net8.0-windows\FileTranscribe.exe --file testmedia\two-speakers.wav --mode high --diarize --models-root models
+
+# 9) Build the long fixtures (gitignored testmedia/) from the bundled model's test_wavs/0.wav
+#    (now also builds testmedia/two-speakers.wav)
 ./tools/make-long-testmedia.ps1
 ```
 
@@ -122,16 +129,18 @@ is proven, not assumed.
 
 | Project | Result |
 | --- | --- |
-| `UnitTests` | **190 passed / 0 failed** (159 at Phase 1; **+31** in Phase 2) |
-| `IntegrationTests` | **41 passed / 0 failed** (33 at Phase 1; **+8** in Phase 2) |
+| `UnitTests` | **208 passed / 0 failed** (190 at Phase 2; **+18** in Phase 3) |
+| `IntegrationTests` | **43 passed / 0 failed** (41 at Phase 2; **+2** in Phase 3) |
 | `PerformanceTests` | **3 passed / 1 skipped** (skipped = `ThreeHourSoak`, never executed) |
 | `dotnet build LocalMeetingSubtitle.sln -c Release` | **0 errors** |
 
 Phase 1 added 19 integration tests (`MediaDecodeTests` 15 + `MediaToAsrEndToEndTests` 4). Phase 2 added
 31 unit tests (`OfflineSegmenterTimingTests`, `OverlapTextDeduplicatorTests`,
 `OfflineTranscriptionEngineTests`, `TranscriptionModeCatalogTests`) and 8 integration tests
-(`FileTranscriptionTests`: 4 theory + 4 fact). The live-subtitle suites are unaffected (**no
-regression**).
+(`FileTranscriptionTests`: 4 theory + 4 fact). Phase 3 added 18 unit tests
+(`TranscriptAlignmentServiceTests`, `FileTranscriptionServiceTests`, plus shared doubles in
+`TestDoubles.cs`) and 2 integration tests (`FileTranscriptionDiarizationTests`). The live-subtitle
+suites are unaffected (**no regression**).
 
 ### 4.5 Phase 2 — segmented long-audio offline ASR
 
@@ -199,6 +208,60 @@ The second region genuinely restarts 1.5 s **before** the first ends — and the
 - **Conclusion (verified):** SenseVoice **cannot** use model-level hotwords in sherpa-onnx 1.13.8.
   Domain terms for the High-accuracy mode must go through `TextCorrectionEngine` (correction rules).
 
+### 4.6 Phase 3 — role-tagged dialogue
+
+Executed with the built `FileTranscribe` CLI against the two-speaker fixture. The command (verbatim):
+
+```powershell
+tools\FileTranscribe\bin\Debug\net8.0-windows\FileTranscribe.exe --file testmedia\two-speakers.wav --mode high --diarize --models-root models
+```
+
+Output (verbatim, diary reduced):
+
+```text
+MODE=HighAccuracy DISPLAY=高精度 MODEL=sense-voice-small-int8 INSTALLED=True
+FILE=…\testmedia\two-speakers.wav  KIND=Audio CONTAINER=wav DURATION=14.100s AUDIO_STREAMS=1
+INFO  Diarization run d31ad9cf136c4742b9257ce35c2d0505: 225592 samples (00:00:14.0995000) from C:\Users\huawei\AppData\Local\Temp\dijob-7c91e0475a1b4fd9b1419f9f4b5a48d3.wav
+INFO  Diarization run d31ad9cf136c4742b9257ce35c2d0505 succeeded: 2 speakers, 6/6 assigned, 0 need confirmation
+INFO  File transcription finished: 6 segment(s), 2 turn(s), diarized=True, elapsed=3.2s.
+
+[00:00:00.260 - 00:00:04.540] A: 今天是星期二。今天是星期二。
+[00:00:05.580 - 00:00:13.820] B: 这是我第四次。办年度演讲。这是我第四次。办年度演讲。
+
+PARTICIPANT B (11514447cd124912939705c37ae57500) speaking=8.2s turns=1 segments=4
+PARTICIPANT A (e3e1918e142b41d98f82558f0de00cb0) speaking=4.3s turns=1 segments=2
+PARTICIPANTS=2 TURNS=2
+SEGMENTS=6  AUDIO_SECONDS=14.100  ELAPSED_SECONDS=3.216  RTF=0.2281
+DIARIZED=True COMPLETED=True CANCELLED=False
+```
+
+The fixture's first half (speaker A, two segments) merged into **one A turn** and the second half
+(speaker B, four segments) into **one B turn** — exactly **2 speakers and 2 turns**. The diarization ran
+over a **temporary 16 kHz mono WAV** (`dijob-…wav` in `%TEMP%`) written by the tee of the decode pass —
+the same path that makes a video diarizable.
+
+**Cleanup (verified):** after the runs, **no** `dijob-*.wav`, **no** `ft-*.db`, `-wal` or `-shm`
+remained in `%TEMP%`, and **no** leftover WAV remained in the staging directory.
+
+**Coverage:** the Phase 3 integration tests are `FileTranscriptionDiarizationTests` — (a) a real
+two-speaker file producing a 2-participant dialogue, and (b) a video file (`testmedia/two-tracks.mp4`,
+audio track 1) proving the temp-WAV tee makes video diarizable. Unit tests are
+`TranscriptAlignmentServiceTests` and `FileTranscriptionServiceTests` (with shared doubles in
+`TestDoubles.cs`).
+
+**Honest caveats for Phase 3:**
+
+- The dialogue was exercised **only** on the **14.1 s** `two-speakers.wav` fixture. Diarization is a
+  **whole-file** operation (V0.4 engine, cap **4 h**); a long diarized file was **not** run — see
+  [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) P3-17.
+- No **reference dialogue** exists, so the correctness of the speaker→turn assignment was checked by
+  inspection of the output above, **not** against a ground-truth labelled transcript.
+- `DiarizationProgress.Fraction` was `0.0` throughout (a **pre-existing V0.4 cosmetic** issue, not
+  introduced by Phase 3) — see [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) P3-19.
+- **Dev host only** (Windows 10 Pro; target Windows 11 / Core Ultra 7 155H **not** available) — nothing
+  here is verified on the target laptop.
+- **No UI** is wired for file transcription yet (Phase 5); this is the CLI path only.
+
 ## 5. NOT covered / NOT_TESTED
 
 The following are explicitly **not** tested in this report. Do not read them as "passing".
@@ -208,7 +271,7 @@ The following are explicitly **not** tested in this report. Do not read them as 
 | **Long-audio accuracy (CER / WER)** | there is **no reference transcript** on the dev host, so accuracy cannot be measured | **NOT_TESTED** |
 | **A file longer than ~1 minute** | the only long fixtures are **56 s / 65 s** (Phase 2); nothing longer was run | **NOT_TESTED** |
 | **SenseVoice model-level hotwords (High-accuracy mode)** | **verified unsupported** in sherpa-onnx 1.13.8 (the native build refuses) — a hard limitation, not a test gap; domain terms go through `TextCorrectionEngine` instead | **NOT SUPPORTED (verified)** |
-| **Role-tagged dialogue / alignment for file jobs** | Phase 3 not started | **NOT_TESTED** |
+| **Diarization of a long (> 14.1 s) or > 2 h file** | only the **14.1 s** `two-speakers.wav` fixture was diarized; diarization is whole-file (V0.4, cap 4 h) | **NOT_TESTED** |
 | **Job queue / checkpoint / resume** | Phase 4 not started | **NOT_TESTED** |
 | **Dialogue editor UI** | Phase 5 not started | **NOT_TESTED** |
 | **TXT / Markdown / CSV / SRT / DOCX export for file jobs** | Phase 6 not started | **NOT_TESTED** |
@@ -225,6 +288,8 @@ Everything under "Results" was executed on the development host and is reproduci
 in §3. Everything under §5 was **not** executed and is marked `NOT_TESTED` / `BLOCKED`. No result was
 carried over from the target hardware, because that hardware was never available. The decode-level
 evidence supports "the media layer and the first link work"; the Phase 2 evidence (§4.5) supports
-"segmentation, per-segment decode and the three modes work on **56 s / 65 s** fixtures". Neither
-supports any claim about **long-audio accuracy**, a **file longer than ~1 minute**, the dialogue
-pipeline, or the target machine.
+"segmentation, per-segment decode and the three modes work on **56 s / 65 s** fixtures"; the Phase 3
+evidence (§4.6) supports "diarization + alignment produce a 2-speaker, 2-turn dialogue for the
+**14.1 s** two-speaker fixture, and the temp-WAV tee makes a video file diarizable". None of this
+supports any claim about **long-audio accuracy**, a **file longer than ~1 minute**, **diarizing a long
+file**, or the **target machine**.

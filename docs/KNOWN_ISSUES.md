@@ -6,6 +6,9 @@ items that could not be verified on the available hardware.
 **There are no open P0 defects.** Everything below is either already fixed, or a minor /
 documentation-level limitation (mostly P3), or an item blocked purely by the absence of the target
 hardware. **V0.5 Phase 2 added four fixed defects (two P1, two P2) and one P2 that is still OPEN.**
+**V0.5 Phase 3 (role-tagged dialogue) added no code defect; it introduces three open limitations
+(P3-17 duration/memory of whole-file diarization, P3-18 a stale temp WAV after a crash, and P3-19 a
+pre-existing V0.4 cosmetic progress item).**
 
 ## Summary
 
@@ -39,9 +42,12 @@ hardware. **V0.5 Phase 2 added four fixed defects (two P1, two P2) and one P2 th
 | P3-11 | Built-in lexicon: the bundled zh-14M model cannot encode several lexicon terms | Low | Open |
 | P3-12 | Bundled FFmpeg is LGPL (decode-only): no libx264, so H.264 **encoding** is unavailable | Low | Open (harmless — 字幕君 only decodes) |
 | P3-13 | FFmpeg not yet bundled into the installer / portable ZIP | Low | Open → V0.5 Phase 8 |
-| P3-14 | File transcription Phases 2–8 not implemented | Low | Open |
+| P3-14 | File transcription Phases 4–8 not implemented | Low | Open |
 | P3-15 | No `AGENTS.md` in the repo (the V0.5 spec's session-startup ritual references it) | Low | Open |
 | P3-16 | No reference transcript → file-transcription CER/WER not measured | Low | Open |
+| P3-17 | Whole-file diarization: 4 h cap + ~1.8 GB transient at 4 h; files > 2 h risky | Medium | Open |
+| P3-18 | A crash mid-job leaves the temporary diarization WAV until the next app start | Low | Open |
+| P3-19 | `DiarizationProgress.Fraction` renders `0.0` throughout a run (pre-existing V0.4 cosmetic) | Low | Open |
 | BLOCKED-1 | Full Start→transcribe→persist UI path | P0 | **CLOSED (2026-10-09, dev host)** — a UI-driven Start on the published build produced and persisted real subtitles |
 | BLOCKED-2 | No real-meeting 3-hour stability run | P0 (target) | Blocked (`ThreeHourSoak` never executed) |
 | BLOCKED-3 | Installer signature is self-signed / untrusted | P1 (release) | Partial (MSI + Setup.exe produced & signed; no CA-issued certificate) |
@@ -302,8 +308,9 @@ following limitations are known and accepted for this version.
 ### V0.5 — open limitations (P3)
 
 V0.5 adds an **offline file-transcription** workflow (import audio/video → FFmpeg decode → offline
-ASR → diarization → role-tagged dialogue). **Only Phase 0–1 (FFmpeg tooling + media decode layer) is
-implemented**; the following are known and accepted for this state.
+ASR → diarization → role-tagged dialogue). **Phase 0–3 (FFmpeg tooling + media decode layer + segmented
+long-audio offline ASR + role-tagged dialogue) are implemented**; the following are known and accepted
+for this state.
 
 #### P3-12 — The bundled FFmpeg is LGPL and cannot encode H.264
 
@@ -324,15 +331,15 @@ implemented**; the following are known and accepted for this state.
   `third_party/ffmpeg` next to the app **when present**.
 - **Planned:** V0.5 Phase 8 (bundle FFmpeg into the release artifacts).
 
-#### P3-14 — File transcription Phases 2–8 not implemented
+#### P3-14 — File transcription Phases 4–8 not implemented
 
-- **Impact:** only the media-decode layer exists. There is **no** segment-level/VAD pipeline, **no**
-  `ITranscriptionJobService`, **no** `ITranscriptAlignmentService`, **no** migration-5 tables
+- **Impact:** Phases 0–3 exist (media decode, segmented offline ASR, role-tagged dialogue). There is
+  still **no** `ITranscriptionJobService`, **no** migration-5 tables
   (`MediaFile`/`TranscriptionJob`/`TranscriptionChunk`/`TranscriptSegment`/`JobCheckpoint`), **no**
   DOCX export, **no** dialogue editor UI, and **no** player/drag-drop. The database schema is still at
   **migration 4**.
 - **Workaround:** none — the feature is not wired into the app; this is in-progress work.
-- **Planned:** Phases 2–8 (see [`ARCHITECTURE_V05.md`](ARCHITECTURE_V05.md)); per-item status in
+- **Planned:** Phases 4–8 (see [`ARCHITECTURE_V05.md`](ARCHITECTURE_V05.md)); per-item status in
   [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) (FT-01 .. FT-25).
 
 #### P3-15 — No `AGENTS.md` in the repository
@@ -352,6 +359,41 @@ implemented**; the following are known and accepted for this state.
   transcription (**CER / WER**) is **not measured** — only that decoded media produces plausible
   Chinese text. No accuracy claim is made.
 - **Workaround:** none; accuracy measurement needs a reference transcript, which is not available.
+
+#### P3-17 — Whole-file diarization: duration/memory limit (files > 2 h risky) *(OPEN, medium)*
+
+- **Impact:** the V0.4 diarizer reused for file jobs is a **whole-file** operation. It caps at **4 h**,
+  and `NaudioAudioFileLoader.LoadMono` builds a `List<float>` and then calls `.ToArray()` — roughly
+  **~1.8 GB of transient memory at 4 h** of 16 kHz audio. Files **longer than ~2 h** should therefore be
+  treated as risky.
+- **Measured evidence:** only the **14.1 s** two-speaker fixture (`testmedia/two-speakers.wav`) was
+  diarized; **no long file was diarized**, so the limit is documented as an open design constraint, not
+  a measured failure.
+- **Workaround:** none yet — split very long recordings before diarizing, or wait for a streaming
+  diarization path (not planned for V0.5).
+- **Not fixed:** this is a property of the reused V0.4 engine; Phase 3 deliberately did not modify it
+  (see [`DECISIONS.md`](DECISIONS.md) D14).
+
+#### P3-18 — A crash mid-job leaves the temporary diarization WAV until the next start *(OPEN, low)*
+
+- **Impact:** the file job writes a temporary 16 kHz mono WAV into a caller-supplied staging directory
+  (the app passes `LocalDataPaths.RecordingsDirectory`). If the process dies mid-job, that WAV is left
+  behind until the **existing 24 h orphan sweep** removes it on the next app start. The
+  `tools/FileTranscribe` CLI deletes its temp artefacts in `finally` (WAV, SQLite DB, `-wal`/`-shm`).
+- **Measured evidence:** after the verified runs, **no** `dijob-*.wav`, **no** `ft-*.db`/`-wal`/`-shm`,
+  and **no** leftover staging WAV remained in `%TEMP%`.
+- **Workaround:** none needed — the daily sweep covers it; do not delete files under
+  `%LOCALAPPDATA%\SubtitleJun\recordings\` manually while a job runs.
+
+#### P3-19 — `DiarizationProgress.Fraction` renders `0.0` during a run *(OPEN, low — pre-existing V0.4)*
+
+- **Impact:** the diarization progress **fraction** is reported as `0.0` for the whole run (the sherpa
+  callback reports an **unknown total**, so no fraction can be computed). `IProgress` reports still
+  arrive; only the fraction is unusable.
+- **Status:** this is a **pre-existing V0.4 cosmetic issue, NOT introduced by Phase 3** — Phase 3 reused
+  the V0.4 diarization service unchanged.
+- **Workaround:** show indeterminate progress (a busy indicator) rather than a percentage.
+- **Not fixed:** explicitly out of scope for Phase 3.
 
 ## Open defect (P2 — still open)
 

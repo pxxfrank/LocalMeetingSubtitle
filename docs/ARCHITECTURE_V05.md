@@ -1,8 +1,9 @@
 # Architecture — V0.5: offline file transcription + role-tagged dialogue
 
 > **Status: work in progress.** **Phase 0** (FFmpeg tooling + licensing), **Phase 1** (media decode
-> layer) and **Phase 2** (segmented long-audio offline ASR) are implemented and verified;
-> **Phases 3–8 are NOT_STARTED**. All target-hardware acceptance (Windows 11 + Core Ultra 7 155H) is
+> layer), **Phase 2** (segmented long-audio offline ASR) and **Phase 3** (role-tagged dialogue:
+> diarization of the decoded file + transcript/speaker alignment) are implemented and verified;
+> **Phases 4–8 are NOT_STARTED**. All target-hardware acceptance (Windows 11 + Core Ultra 7 155H) is
 > **BLOCKED / NOT_TESTED** because that machine is not available — every fact below was measured on
 > the Windows 10 dev host.
 >
@@ -28,7 +29,7 @@ Everything is offline and CPU-only, exactly like the live path.
 | Entry | Behaviour | Status |
 | --- | --- | --- |
 | **Live subtitles** (existing) | WASAPI loopback captures system playback → streaming ASR → live subtitles → SQLite. Captures *what is playing right now*. | **Unchanged** — V0.5 adds nothing to this path, and the V0.4 regression tests still pass (see §8). |
-| **File transcription** (new) | User selects a local media file → FFmpeg decodes it to 16 kHz mono PCM → VAD segmentation → per-segment offline ASR → diarization → role-tagged dialogue → export. Works on *an already-recorded file*. | **Phase 0–2 done.** Media decode and segmented long-audio offline ASR (timestamped segments, three modes) are done; diarization/alignment and everything downstream are not started. |
+| **File transcription** (new) | User selects a local media file → FFmpeg decodes it to 16 kHz mono PCM → VAD segmentation → per-segment offline ASR → diarization → role-tagged dialogue → export. Works on *an already-recorded file*. | **Phase 0–3 done.** Media decode, segmented long-audio offline ASR (timestamped segments, three modes) and role-tagged dialogue (diarization of the decoded file + transcript/speaker alignment) are done; the job queue, editor UI, dialog export and packaging are not started. |
 
 The two entries are fully independent: the file path never touches the capture pipeline, and it is
 designed (see §7) so it can never starve live ASR.
@@ -57,8 +58,9 @@ New `Core` contracts / models:
 | `Core/Abstractions/MediaAbstractions.cs` → `IMediaDecodeService` | contract | probe + streaming decode of a local file | **DONE (Phase 1)** |
 | `MediaDecodeException` / `MediaErrorKind` / `MediaToolPaths` | types | machine-readable decode failure + resolved tool paths | **DONE (Phase 1)** |
 | `ITranscriptionJobService` | contract (planned) | own a file-transcription **job**: queue, progress, cancel, checkpoint/resume, status | **NOT_STARTED (Phase 4)** |
-| `ITranscriptAlignmentService` | contract (planned) | align the offline transcript's segments with diarization intervals into a role-tagged dialogue | **NOT_STARTED (Phase 3)** |
-| `ISpeakerDiarizationService` (from V0.4) | **reused** | run offline speaker diarization over decoded audio | reuse; file-job wiring **NOT_STARTED (Phase 3)** |
+| `ITranscriptAlignmentService` | contract | align the offline transcript's segments with diarization intervals into a role-tagged dialogue | **DONE (Phase 3)** |
+| `IFileTranscriptionService` | contract | run one file end-to-end: admit → probe → decode (tee'd) → ASR → persist → diarize → align | **DONE (Phase 3)** |
+| `ISpeakerDiarizationService` (from V0.4) | **reused** | run offline speaker diarization over decoded audio | reuse; file-job wiring **DONE (Phase 3)** |
 
 > `ISpeakerDiarizationService` and `ISpeakerAlignmentService` already exist from V0.4 and are
 > exercised by the speaker-diarization tests. V0.5 will **reuse** them for file jobs rather than add
@@ -77,6 +79,17 @@ New **Phase 2** types (segmented long-audio offline ASR; detailed in §6):
 | `Asr/TranscriptionModeCatalog.cs` | component | `Resolve(mode, …)` → `ResolvedTranscriptionMode(…, IsAvailable, UnavailableReason)` — the data-driven three-mode catalog | **DONE (Phase 2)** |
 | `Asr/AsrOptionsFactory.cs` (modified) | component | `FromDescriptor` gained optional `decodingMethod`, `language`, `useInverseTextNormalization` | **DONE (Phase 2)** |
 
+New **Phase 3** types (role-tagged dialogue; detailed in §6.5):
+
+| Type | Kind | Purpose | Status |
+| --- | --- | --- | --- |
+| `Core/Models/DialogueModels.cs` | models | `TranscriptSegmentFact`, `DialogueTurn`, `DialogueParticipant`, `DialogueTranscript`, `DialogueAssemblyOptions` — the role-tagged dialogue shape | **DONE (Phase 3)** |
+| `Core/Abstractions/TranscriptAlignmentAbstractions.cs` → `ITranscriptAlignmentService` | contract | `Align(sessionId, segments, assignments, speakers, options?)` → `DialogueTranscript` | **DONE (Phase 3)** |
+| `Core/Speakers/TranscriptAlignmentService.cs` | component (pure) | merge consecutive same-speaker segments into turns; aggregate `Participants`; unknown-speaker turns | **DONE (Phase 3)** |
+| `Core/Abstractions/FileTranscriptionAbstractions.cs` | contract + models | `IFileTranscriptionService`, `FileTranscriptionPhase`, `FileTranscriptionProgress`, `FileTranscriptionRequest`, `FileTranscriptionResult` | **DONE (Phase 3)** |
+| `Core/Transcription/FileTranscriptionService.cs` | component | run one file end-to-end (admission → probe → tee decode → ASR → persist → diarize → align) | **DONE (Phase 3)** |
+| `Core/Audio/PcmWavWriter.cs` | component | **synchronous** incremental PCM16 WAV writer (patches RIFF/`data` sizes on `Dispose`) for the diarizer's temp file | **DONE (Phase 3)** |
+
 ## 4. Media data flow (Phase 1, implemented)
 
 ```
@@ -93,7 +106,7 @@ New **Phase 2** types (segmented long-audio offline ASR; detailed in §6):
         |  (the whole file is never buffered; a bounded channel provides back-pressure; cancel kills the tree)
         v
  PcmBlock stream  ->  [Phase 2 DONE: segment / VAD -> OfflineTranscriptionEngine -> timestamped segments]
-                  ->  [Phase 3: diarization -> alignment]  ->  [role-tagged dialogue]  ->  [Phase 6: export]
+                  ->  [Phase 3 DONE: diarization -> alignment]  ->  [role-tagged dialogue]  ->  [Phase 6: export]
 ```
 
 Decode details confirmed in the code and in the integration tests:
@@ -132,7 +145,7 @@ job/queue/checkpoint model — **deferred to Phase 4**. **None of these tables e
 > job/orchestration layer that has no V0.4 equivalent. The exact split is a Phase 4 design decision
 > and is not fixed here.
 
-## 6. Segmented offline ASR (Phase 2 — DONE) → role-tagged dialogue (Phase 3 — NOT_STARTED)
+## 6. Segmented offline ASR (Phase 2 — DONE) → role-tagged dialogue (Phase 3 — DONE)
 
 ```
  decoded 16 kHz PCM (Phase 1, done)
@@ -147,9 +160,9 @@ job/queue/checkpoint model — **deferred to Phase 4**. **None of these tables e
         |    + flush the final partial segment at end of stream
         v
  OfflineTranscriptionResult  (segments with global Start/End + Text, AudioDuration, Elapsed, Rtf, …)
-        |  Phase 3 (NOT_STARTED): reuse ISpeakerDiarizationService (V0.4)  ->  raw speaker intervals
+        |  Phase 3 (DONE): reuse ISpeakerDiarizationService (V0.4)  ->  raw speaker intervals + assignments
         v
- Phase 3 (NOT_STARTED): ITranscriptAlignmentService.Align(segments, intervals)  ->  one speaker per segment
+ Phase 3 (DONE): ITranscriptAlignmentService.Align(segments, assignments, speakers)  ->  one speaker per segment
         v
  role-tagged dialogue  (turn = {speaker, start, end, text})  ->  Phase 5 editor  ->  Phase 6 export
 ```
@@ -198,6 +211,62 @@ When consecutive regions overlap in audio (High-accuracy mode uses a 1.5 s overl
 - If the **whole** current text repeats the previous one, it is **dropped** instead.
 - **Only the later text is ever modified, and it can never be emptied** — a full repetition becomes `Dropped`, not an empty segment.
 
+### 6.5 Role-tagged dialogue (Phase 3 — DONE)
+
+The file job runs one file **end to end** through `FileTranscriptionService` (`IFileTranscriptionService`). Its
+order is deliberate and strict:
+
+1. **Admission** — a `SemaphoreSlim(1, 1)` admits a single job; a second concurrent job is rejected with
+   an error result (no queuing yet — that is Phase 4).
+2. **Probe** — `IMediaDecodeService.ProbeAsync` reads the container/streams.
+3. **Decode + tee** — the streamed decode (`IMediaDecodeService.DecodeAsync`) is **tee'd in the same pass**
+   into a temporary 16 kHz mono WAV via `PcmWavWriter`. The ASR still streams — the file is never buffered
+   in memory. A length check compares the written WAV duration against the transcribed audio duration and
+   warns on divergence.
+4. **ASR** — the decoded blocks go straight into the Phase 2 `OfflineTranscriptionEngine`.
+5. **Persist (one session, one `segments` row per transcript segment)** — one `MeetingSession` plus one
+   `segments` row per segment, capturing the assigned **`SegmentId` at append time** (never trusting
+   `SourceChunkId`, which skips empty chunks).
+6. **Diarize** — `SpeakerDiarizationService.RunAsync` (V0.4) runs over the temporary WAV, **reused
+   unchanged** (see [`DECISIONS.md`](DECISIONS.md) D14).
+7. **Read back assignments** — `GetAssignmentsAsync` + `GetSpeakersAsync` from the repository.
+8. **Align** — `ITranscriptAlignmentService.Align(sessionId, facts, assignments, speakers, options?)`
+   → `DialogueTranscript`.
+
+**Why a temporary WAV.** The V0.4 diarizer is a **whole-file** engine that takes a **file path** and loads
+it through `IAudioFileLoader` (NAudio). NAudio cannot read video containers (`.mp4/.mkv/.mov`), and the file
+job must support video. Since FFmpeg already decodes the file, the job writes its own 16 kHz mono WAV and
+reuses `SpeakerDiarizationService` unchanged. This avoids touching tested V0.4 code, avoids duplicating the
+run/speaker/interval/assignment persistence, supports video, and keeps the ASR path streaming. Rejected
+alternatives: buffering the whole decoded file in memory (4 h @16 kHz float32 ≈ 920 MB) and adding a
+samples-based overload to `ISpeakerDiarizationService`.
+
+The temp WAV lives in a **caller-supplied staging directory** (the app passes
+`LocalDataPaths.RecordingsDirectory`, so the existing 24 h orphan sweep covers a crash) and is deleted in
+`finally`. The caller owns `request.Engine` (never disposed). Diarization is a **soft failure**: busy or
+failed → a `Warning`, `Diarized=false`, an all-unknown dialogue, and **never an exception**.
+
+**Dialogue assembly is from the persisted `speaker_assignments`, not a second alignment pass.** The
+diarizer's raw-cluster-index → speaker-id mapping is only built transiently inside
+`SpeakerDiarizationService` and is not persisted, whereas `speaker_assignments` already holds the final
+chosen speaker (plus `NeedsConfirmation` / `Confidence`) per segment id (see
+[`DECISIONS.md`](DECISIONS.md) D15).
+
+**The pure assembler — `TranscriptAlignmentService`.** It is pure and **idempotent** (so the Phase 5
+editor can re-assemble). It merges consecutive segments by the same speaker into one turn and starts a
+**new turn** on:
+
+- a **speaker change**,
+- a **gap** between consecutive segments greater than `DialogueAssemblyOptions.MaxGap` (**default 2 s**), or
+- the turn's text exceeding `DialogueAssemblyOptions.MaxTurnChars` (**default 500**).
+
+A turn is the **first `Start`**, the **last `End`**, the **concatenated text**, the **constituent segment
+ids**, and an **OR-propagated `NeedsConfirmation`**. Segments whose assignment is missing or whose
+`SpeakerId` is null become an **unknown turn** (`SpeakerId == null`, label `未知发言人`, grey
+`0xFF808080`) and are **excluded from `Participants`**. `Participants` aggregate speaking time / turn
+count / segment count over **known** speakers, ordered by speaking time descending (see
+[`DECISIONS.md`](DECISIONS.md) D16).
+
 ## 7. Threading / resource rules
 
 The prime rule: **file transcription must never starve live ASR.**
@@ -229,7 +298,7 @@ The prime rule: **file transcription must never starve live ASR.**
 | **0** | FFmpeg tooling + licensing (`tools/fetch-ffmpeg.ps1`, LGPL build pinned by SHA-256; see [`LICENSES.md`](LICENSES.md)) | **DONE** |
 | **1** | Media decode layer: `IMediaDecodeService`, `LocalMeetingSubtitle.Media` (probe + streaming PCM), DI registration, integration tests | **DONE** |
 | **2** | Segmented long-audio offline ASR (VAD / energy segmentation + per-segment sherpa-onnx offline decode + global timestamps + three-mode catalog; see §6) | **DONE** |
-| 3 | Role-tagged dialogue: wire `ISpeakerDiarizationService` + new `ITranscriptAlignmentService` for file jobs | **NOT_STARTED** |
+| 3 | Role-tagged dialogue: wire `ISpeakerDiarizationService` + new `ITranscriptAlignmentService` for file jobs (`IFileTranscriptionService` / `FileTranscriptionService`, `PcmWavWriter`, `DialogueModels`; see §6.5) | **DONE** |
 | 4 | Job queue + checkpoints/resume (`ITranscriptionJobService`, migration 5) | **NOT_STARTED** |
 | 5 | Dialogue editor UI (rename/merge/reassign turns) | **NOT_STARTED** |
 | 6 | Export for file jobs: TXT / Markdown / CSV / SRT / **DOCX** | **NOT_STARTED** |
@@ -238,7 +307,7 @@ The prime rule: **file transcription must never starve live ASR.**
 
 ## 9. What is verified vs. not
 
-**Verified on the dev host (Phase 0–2):**
+**Verified on the dev host (Phase 0–3):**
 
 - FFmpeg provisioned as an **LGPL v3** build, pinned by URL + SHA-256, redistributable as a separate
   program (see [`LICENSES.md`](LICENSES.md)).
@@ -258,17 +327,35 @@ The prime rule: **file transcription must never starve live ASR.**
 - **Three modes / engine / de-dup** are covered by new tests (`OfflineSegmenterTimingTests`,
   `OverlapTextDeduplicatorTests`, `OfflineTranscriptionEngineTests`, `TranscriptionModeCatalogTests`
   in unit; `FileTranscriptionTests` in integration).
-- **No regression**: unit **190**, integration **41**, performance 3 (+1 skipped), build 0 errors —
+- **Role-tagged dialogue works (Phase 3):** `tools/FileTranscribe --diarize` on
+  `testmedia/two-speakers.wav` (**451,262 bytes ≈ 14.1 s**; speaker A ×2, gap, speaker B ×2) produced
+  **2 speakers, 6/6 assigned, 0 need confirmation**, **6 segments → 2 turns** (`A` merged its two
+  segments; `B` merged its four), with `PARTICIPANTS=2 TURNS=2`, `RTF=0.2281`, `DIARIZED=True`.
+  Diarization ran over the temp 16 kHz mono WAV (the same tee path that makes video diarizable); after
+  the run no `dijob-*.wav`, no `ft-*.db`/`-wal`/`-shm`, and no leftover staging WAV remained.
+- **Phase 3 tests:** unit **+18** (`TranscriptAlignmentServiceTests`, `FileTranscriptionServiceTests`,
+  plus shared doubles in `TestDoubles.cs`); integration **+2** (`FileTranscriptionDiarizationTests` —
+  a real two-speaker file producing a 2-participant dialogue, and a video file `testmedia/two-tracks.mp4`
+  audio track 1 proving the temp-WAV tee makes video diarizable).
+- **No regression**: unit **208**, integration **43**, performance 3 (+1 skipped), build 0 errors —
   the existing live-subtitle suites are unaffected.
 - Full detail and commands: [`FILE_TRANSCRIPTION_TEST_REPORT.md`](FILE_TRANSCRIPTION_TEST_REPORT.md).
 
 **NOT verified / NOT_STARTED (do not treat as done):**
 
-- **Phases 3–8 do not exist.** There is no `ITranscriptAlignmentService`, no role-tagged dialogue, no
-  `ITranscriptionJobService`, no migration-5 tables, no DOCX, no dialogue editor, no drag-drop UI, no
-  player. (Phase 2 exists but returns results **in memory only** — no job/queue persistence.)
+- **Phases 4–8 do not exist.** There is no `ITranscriptionJobService`, no migration-5 tables, no DOCX,
+  no dialogue editor, no drag-drop UI, no player. (Phases 2–3 exist but the file job is not wired to any
+  UI and returns results **in memory + the existing `segments`/`speaker_assignments` tables only** — no
+  job/queue persistence.)
 - **Long-audio accuracy is unmeasured** — there is **no reference transcript**, so CER/WER is
   `NOT_TESTED`; only 56 s and 65 s fixtures exist (no > 1 h file).
+- **Diarization is a whole-file operation.** The V0.4 diarizer caps at **4 h** and
+  `NaudioAudioFileLoader.LoadMono` builds a `List<float>` then `.ToArray()` (~1.8 GB transient at 4 h),
+  so files **> 2 h** are treated as risky — **not** tested beyond the 14.1 s two-speaker fixture
+  (see [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)).
+- **No UI entry.** There is still no UI entry for file transcription, and `AppSettings.EnableVadSegmenting`
+  remains unwired. `SubtitleSegment.SpeakerName` stays transient; Phase 3 changes no persistence and no
+  export formatter (Phase 6 owns dialogue export).
 - **File decode performance** (throughput on long files, memory on multi-hour audio) is unmeasured.
 - **Target-hardware acceptance** (Windows 11 + Core Ultra 7 155H: CPU, memory, latency, and the live
   transcript **plus** a concurrent file job) is `BLOCKED` / `NOT_TESTED` — the target machine is not

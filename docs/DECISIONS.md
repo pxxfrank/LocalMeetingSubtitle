@@ -162,3 +162,65 @@ consequence/trade-off.
   `SqliteSubtitleRepository`, `StartOffsetMs` / `EndOffsetMs`).
 - **Consequence:** Phase 2 requires **no migration**; the schema stays at migration 4, and the
   job/orchestration schema is designed and added together with the Phase 4 job service.
+
+## D14 — Temp-WAV tee + reuse `SpeakerDiarizationService` unchanged (Phase 3)
+
+- **Decision:** for a file job, write the decoded audio to a **temporary 16 kHz mono WAV** (tee'd in the
+  same decode pass, via the new **synchronous** `PcmWavWriter`) and run the V0.4
+  `SpeakerDiarizationService` over that file **unchanged**, rather than streaming samples into the
+  diarizer.
+- **Context:** the V0.4 diarizer is a **whole-file** engine that takes a **file path** and loads it
+  through `IAudioFileLoader` (NAudio). NAudio cannot read video containers (`.mp4/.mkv/.mov`), and the
+  file job must support video. FFmpeg already decodes the file.
+- **Rationale:** reusing the tested V0.4 service avoids touching tested code, avoids duplicating the
+  run/speaker/interval/assignment persistence, supports video, and keeps the ASR path streaming. Two
+  design notes make this safe:
+  - **Fresh synchronous writer.** `PcmWavWriter` is deliberately **synchronous** (unlike the live-capture
+    `WaveRecordingService`, which uses a bounded channel + **frame drops**). A file job is pull-based and
+    a dropped frame would silently shift the whole diarization timeline, so the writer never drops — it
+    blocks the decode pass instead.
+  - **Drop guard / length check.** The service compares the written WAV's duration against the
+    transcribed audio duration and **warns on divergence**, so a truncated or mis-encoded temp file is
+    surfaced rather than silently mis-aligning speakers.
+- **Rejected alternatives:** buffering the whole decoded file in memory (4 h @16 kHz float32 ≈ 920 MB),
+  and adding a samples-based overload to `ISpeakerDiarizationService` (would touch tested V0.4 code).
+- **Consequence:** the process holds a temp WAV in a **caller-supplied staging directory** (the app passes
+  `LocalDataPaths.RecordingsDirectory`, so the existing 24 h orphan sweep covers a crash); it is deleted in
+  `finally`. A crash mid-job leaves the WAV until the next app start cleans it (see
+  [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)).
+
+## D15 — Assemble the dialogue from persisted `speaker_assignments` (Phase 3)
+
+- **Decision:** build the role-tagged dialogue from the **persisted `speaker_assignments`** rows, **not**
+  by re-running `ISpeakerAlignmentService` over the diarizer's raw intervals.
+- **Context:** the diarizer's **raw-cluster-index → speaker-id** mapping is only built **transiently**
+  inside `SpeakerDiarizationService` and is **not persisted**. The final per-segment decision is already
+  in `speaker_assignments`, which holds the chosen speaker plus `NeedsConfirmation` / `Confidence` for
+  each segment id.
+- **Rationale:** reading the persisted assignments gives the **final** (post-clustering) speaker per
+  segment without re-deriving the transient cluster mapping, keeps the assembler a pure function of stored
+  state, and lets the Phase 5 editor re-assemble idempotently after a manual edit.
+- **Consequence:** `ITranscriptAlignmentService.Align(sessionId, facts, assignments, speakers, options?)`
+  depends only on repository state; a segment with no assignment (or a null `SpeakerId`) becomes an
+  **unknown** turn rather than an error.
+
+## D16 — Dialogue merge rule (Phase 3)
+
+- **Decision:** `TranscriptAlignmentService` merges consecutive segments by the **same speaker** into one
+  turn, and starts a **new turn** on (a) a **speaker change**, (b) a **gap** larger than
+  `DialogueAssemblyOptions.MaxGap` (**default 2 s**), or (c) the turn's text exceeding
+  `DialogueAssemblyOptions.MaxTurnChars` (**default 500**). A turn takes the **first `Start`**, the
+  **last `End`**, the **concatenated text**, the constituent segment ids, and an **OR-propagated
+  `NeedsConfirmation`**.
+- **Unknown speakers:** a segment whose assignment is missing, or whose `SpeakerId` is null, becomes an
+  unknown turn (`SpeakerId == null`, label **未知发言人**, grey `0xFF808080`) and is **excluded from
+  `Participants`**.
+- **Context:** diarization yields per-segment speaker ids but the product wants readable **dialogue
+  turns**, and a later editor needs a deterministic, reproducible grouping.
+- **Rationale:** a same-speaker + short-gap + bounded-length rule is simple, deterministic and
+  **idempotent** (re-assembly after an edit produces the same turns), and the length cap prevents an
+  unbounded turn when one speaker talks for a long time. Keeping unknown speakers out of `Participants`
+  means the participant list only reflects speakers the diarizer actually identified.
+- **Consequence:** `Participants` aggregate speaking time / turn count / segment count over **known**
+  speakers, ordered by speaking time **descending**; the rule is unit-tested
+  (`TranscriptAlignmentServiceTests`).

@@ -1,4 +1,5 @@
 using System.Text;
+using LocalMeetingSubtitle.Asr;
 using LocalMeetingSubtitle.Core.Abstractions;
 using LocalMeetingSubtitle.Core.Audio;
 using LocalMeetingSubtitle.Core.Models;
@@ -305,6 +306,33 @@ internal static class ModelLocator
         }
         return null;
     }
+}
+
+/// <summary>
+/// Filesystem-backed <see cref="IModelManager"/> so integration tests can resolve a transcription
+/// mode without pulling in the download assembly.
+/// </summary>
+internal sealed class DiskModelManager : IModelManager
+{
+    public DiskModelManager(string modelsRoot) => ModelsRoot = modelsRoot;
+
+    public string ModelsRoot { get; }
+    public IReadOnlyList<ModelDescriptor> Catalog => AsrModelCatalog.All;
+
+    public ModelDescriptor? FindById(string id) => AsrModelCatalog.All.FirstOrDefault(d => d.Id == id);
+
+    public bool IsInstalled(ModelDescriptor descriptor) => MissingFiles(descriptor).Count == 0;
+
+    public IReadOnlyList<ModelFileSpec> MissingFiles(ModelDescriptor descriptor) =>
+        descriptor.Files
+            .Where(f => f.Required && !File.Exists(Path.Combine(GetModelDirectory(descriptor), f.RelativePath)))
+            .ToList();
+
+    public string GetModelDirectory(ModelDescriptor descriptor) => Path.Combine(ModelsRoot, descriptor.DirectoryName);
+
+    public Task<ModelInstallResult> EnsureInstalledAsync(
+        ModelDescriptor descriptor, IProgress<double>? progress = null, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new ModelInstallResult(false, "not supported in tests"));
 }
 
 /// <summary>Reads a canonical PCM16 WAV file into mono float samples.</summary>

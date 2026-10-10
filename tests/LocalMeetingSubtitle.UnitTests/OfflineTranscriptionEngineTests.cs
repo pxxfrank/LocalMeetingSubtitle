@@ -27,7 +27,7 @@ public sealed class OfflineTranscriptionEngineTests
     [Fact]
     public async Task ProducesSegmentsWithGlobalTimestamps()
     {
-        var engine = new ScriptedSegmentEngine("你好世界", "再见");
+        var engine = new ScriptedSegmentsAsrEngine("你好世界", "再见");
         var transcriber = new OfflineTranscriptionEngine(engine, Options());
 
         var result = await transcriber.TranscribeAsync(Blocks(TwoUtterances));
@@ -60,7 +60,7 @@ public sealed class OfflineTranscriptionEngineTests
     [Fact]
     public async Task NonZeroFirstBlockStart_ShiftsEveryTimestamp()
     {
-        var engine = new ScriptedSegmentEngine("你好世界");
+        var engine = new ScriptedSegmentsAsrEngine("你好世界");
         var transcriber = new OfflineTranscriptionEngine(engine, Options());
 
         var result = await transcriber.TranscribeAsync(Blocks(
@@ -79,7 +79,7 @@ public sealed class OfflineTranscriptionEngineTests
     public async Task OverlapText_IsTrimmedAndTheTimelineStaysNonOverlapping()
     {
         var options = Options() with { MaxSegmentSeconds = 1.0, OverlapSeconds = 0.4 };
-        var engine = new ScriptedSegmentEngine("我们先讨论预算问题", "预算问题需要尽快解决", "解决之后再谈其他");
+        var engine = new ScriptedSegmentsAsrEngine("我们先讨论预算问题", "预算问题需要尽快解决", "解决之后再谈其他");
         var transcriber = new OfflineTranscriptionEngine(engine, options);
 
         var result = await transcriber.TranscribeAsync(Blocks([Block(Speech(3.0), 0.0)]));
@@ -100,7 +100,7 @@ public sealed class OfflineTranscriptionEngineTests
     public async Task RepeatedOverlapText_IsDroppedCompletely()
     {
         var options = Options() with { MaxSegmentSeconds = 1.0, OverlapSeconds = 0.4 };
-        var engine = new ScriptedSegmentEngine(
+        var engine = new ScriptedSegmentsAsrEngine(
             "我们开始今天讨论", "我们开始今天讨论", "我们开始今天讨论", "我们开始今天讨论", "我们开始今天讨论");
         var transcriber = new OfflineTranscriptionEngine(engine, options);
 
@@ -114,7 +114,7 @@ public sealed class OfflineTranscriptionEngineTests
     public async Task AppendsTerminalPunctuation_WhenRequested()
     {
         var options = Options() with { AppendTerminalPunctuation = true };
-        var engine = new ScriptedSegmentEngine("你好世界", "已经结束。");
+        var engine = new ScriptedSegmentsAsrEngine("你好世界", "已经结束。");
         var transcriber = new OfflineTranscriptionEngine(engine, options);
 
         var result = await transcriber.TranscribeAsync(Blocks(TwoUtterances));
@@ -126,7 +126,7 @@ public sealed class OfflineTranscriptionEngineTests
     [Fact]
     public async Task CorrectionFunction_IsApplied()
     {
-        var engine = new ScriptedSegmentEngine("云山");
+        var engine = new ScriptedSegmentsAsrEngine("云山");
         var transcriber = new OfflineTranscriptionEngine(engine, Options(), text => text.Replace("云山", "云杉"));
 
         var result = await transcriber.TranscribeAsync(Blocks(
@@ -142,7 +142,7 @@ public sealed class OfflineTranscriptionEngineTests
     [Fact]
     public async Task ReportsProgress()
     {
-        var engine = new ScriptedSegmentEngine("你好世界", "再见");
+        var engine = new ScriptedSegmentsAsrEngine("你好世界", "再见");
         var transcriber = new OfflineTranscriptionEngine(engine, Options());
         var reports = new List<OfflineTranscriptionProgress>();
         var progress = new SynchronousProgress<OfflineTranscriptionProgress>(reports.Add);
@@ -160,7 +160,7 @@ public sealed class OfflineTranscriptionEngineTests
     [Fact]
     public async Task Cancellation_StopsAndReportsCancelled()
     {
-        var engine = new ScriptedSegmentEngine("你好世界");
+        var engine = new ScriptedSegmentsAsrEngine("你好世界");
         var transcriber = new OfflineTranscriptionEngine(engine, Options());
         using var cts = new CancellationTokenSource();
         cts.Cancel();
@@ -177,7 +177,7 @@ public sealed class OfflineTranscriptionEngineTests
     [Fact]
     public async Task UninitializedEngine_IsRejected()
     {
-        var engine = new ScriptedSegmentEngine("x") { Initialized = false };
+        var engine = new ScriptedSegmentsAsrEngine("x") { Initialized = false };
         var transcriber = new OfflineTranscriptionEngine(engine, Options());
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -213,67 +213,6 @@ public sealed class OfflineTranscriptionEngineTests
             cancellationToken.ThrowIfCancellationRequested();
             yield return block;
             await Task.Yield();
-        }
-    }
-
-    /// <summary>Progress that runs synchronously so assertions do not race the report callback.</summary>
-    private sealed class SynchronousProgress<T> : IProgress<T>
-    {
-        private readonly Action<T> _handler;
-        public SynchronousProgress(Action<T> handler) => _handler = handler;
-        public void Report(T value) => _handler(value);
-    }
-
-    /// <summary>An engine that returns one scripted text per decoded segment.</summary>
-    private sealed class ScriptedSegmentEngine : IAsrEngine
-    {
-        private readonly Queue<string> _texts;
-
-        public ScriptedSegmentEngine(params string[] texts)
-        {
-            _texts = new Queue<string>(texts);
-            Capabilities = new AsrCapabilities { Streaming = false, Description = "scripted-segments" };
-        }
-
-        public bool Initialized { get; init; } = true;
-
-        public string Id => "scripted-segments";
-        public bool IsInitialized => Initialized;
-        public AsrCapabilities Capabilities { get; }
-
-        public Task<AsrInitResult> InitializeAsync(AsrEngineOptions options, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new AsrInitResult(AsrInitStatus.Success, "scripted", Capabilities));
-
-        public IAsrSession CreateSession() => new Session(_texts);
-        public void Dispose() { }
-
-        private sealed class Session : IAsrSession
-        {
-            private readonly Queue<string> _texts;
-            private bool _pending;
-            private AsrDecodeResult _result;
-
-            public Session(Queue<string> texts) => _texts = texts;
-
-            public void AcceptWaveform(ReadOnlySpan<float> samples, int sampleRate) => _pending = true;
-            public bool IsReady() => _pending;
-
-            public void Decode()
-            {
-                _pending = false;
-                _result = new AsrDecodeResult(_texts.Count > 0 ? _texts.Dequeue() : "", true);
-            }
-
-            public AsrDecodeResult GetResult() => _result;
-
-            public void Reset()
-            {
-                _pending = false;
-                _result = default;
-            }
-
-            public void InputFinished() { }
-            public void Dispose() { }
         }
     }
 }

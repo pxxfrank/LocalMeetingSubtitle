@@ -235,28 +235,4 @@ public sealed class FileTranscriptionTests
         (c >= 0x4E00 && c <= 0x9FFF) ||
         (c >= 0x3400 && c <= 0x4DBF) ||
         (c >= 0xF900 && c <= 0xFAFF);
-
-    /// <summary>Filesystem-backed model manager so the test does not need the download assembly.</summary>
-    private sealed class DiskModelManager : IModelManager
-    {
-        public DiskModelManager(string modelsRoot) => ModelsRoot = modelsRoot;
-
-        public string ModelsRoot { get; }
-        public IReadOnlyList<ModelDescriptor> Catalog => AsrModelCatalog.All;
-
-        public ModelDescriptor? FindById(string id) => AsrModelCatalog.All.FirstOrDefault(d => d.Id == id);
-
-        public bool IsInstalled(ModelDescriptor descriptor) => MissingFiles(descriptor).Count == 0;
-
-        public IReadOnlyList<ModelFileSpec> MissingFiles(ModelDescriptor descriptor) =>
-            descriptor.Files
-                .Where(f => f.Required && !File.Exists(Path.Combine(GetModelDirectory(descriptor), f.RelativePath)))
-                .ToList();
-
-        public string GetModelDirectory(ModelDescriptor descriptor) => Path.Combine(ModelsRoot, descriptor.DirectoryName);
-
-        public Task<ModelInstallResult> EnsureInstalledAsync(
-            ModelDescriptor descriptor, IProgress<double>? progress = null, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new ModelInstallResult(false, "not supported in tests"));
-    }
 }

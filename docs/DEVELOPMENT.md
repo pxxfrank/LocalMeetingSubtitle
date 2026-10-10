@@ -228,12 +228,30 @@ dotnet run --project tools/FileTranscribe -- --file testmedia/0.mp4 --mode high
 
 # With options
 dotnet run --project tools/FileTranscribe -- --file <path> --mode high --models-root models --track 0 --json
+
+# Role-tagged dialogue (diarize + align); optionally write the dialogue to a file
+dotnet run --project tools/FileTranscribe -- --file testmedia/two-speakers.wav --mode high --diarize --models-root models
+dotnet run --project tools/FileTranscribe -- --file testmedia/two-speakers.wav --mode high --diarize --out dialogue.txt
 ```
 
 Flags: `--file <path>` (required), `--mode fast|standard|high`, `--models-root <path>`,
-`--track N` (audio-stream ordinal), `--hotwords <file>`, `--lexicon`, `--json`.
+`--track N` (audio-stream ordinal), `--hotwords <file>`, `--lexicon`, `--json`,
+`--diarize`, `--out <path>`.
 
 Output line format: `[hh:mm:ss.fff - hh:mm:ss.fff] (#chunk modelId) text`.
+
+**Role-tagged dialogue (`--diarize`, Phase 3).** With `--diarize` the tool builds a temporary SQLite DB
+and the V0.4 `SpeakerDiarizationService` (from `DiarizationModelCatalog`) and runs the full
+`FileTranscriptionService` — probe → tee decode → ASR → persist → diarize → align. It then prints the
+dialogue turns as `[hh:mm:ss.fff - hh:mm:ss.fff] Speaker: text`, followed by `PARTICIPANT …` lines and
+`PARTICIPANTS=<n> TURNS=<n>`. `--json` also emits `participants` / `turns`. `--out <path>` writes the
+dialogue to a file. Both paths delete their temp artefacts (SQLite DB + `-wal`/`-shm`, staging WAV) in
+`finally`.
+
+> **`--diarize` needs the two diarization model folders present under `models/`** —
+> `sherpa-onnx-pyannote-segmentation-3-0` and `3dspeaker-eres2net-base-zh-16k` (install them with
+> `ModelManager --install`; see §4). Without them, diarization is a **soft** failure: the run still
+> produces the transcript, `Diarized=false`, with a warning and an all-unknown dialogue.
 
 > The **High-accuracy** mode needs the offline `sense-voice-small-int8` model installed — it is **not**
 > bundled by default. Install it with
@@ -241,23 +259,30 @@ Output line format: `[hh:mm:ss.fff - hh:mm:ss.fff] (#chunk modelId) text`.
 > use the bundled streaming `streaming-zipformer-zh-14M`. Per the verified constraint, the High-accuracy
 > mode does **not** use model-level hotwords (see [`MODEL_SELECTION.md`](MODEL_SELECTION.md)).
 
-### 6.5 Long test fixtures (`tools/make-long-testmedia.ps1`)
+### 6.5 Test fixtures (`tools/make-long-testmedia.ps1`)
 
-`tools/make-long-testmedia.ps1` builds two longer fixtures from the bundled model's `test_wavs/0.wav`
+`tools/make-long-testmedia.ps1` builds the long fixtures from the bundled model's `test_wavs/0.wav`
 using the fetched FFmpeg:
 
 - `testmedia/long-continuous.wav` — **~56 s of unbroken speech** (the clip joined back-to-back);
-- `testmedia/long-gaps.wav` — **~65 s** of the same clip separated by **1-second silences**.
+- `testmedia/long-gaps.wav` — **~65 s** of the same clip separated by **1-second silences**;
+- `testmedia/two-speakers.wav` — a **two-speaker** fixture (**451,262 bytes ≈ 14.1 s**: speaker A ×2,
+  a gap, then speaker B ×2), built from `models/_diar-eval/fangjun-sr-1.wav` +
+  `models/_diar-eval/leijun-sr-1.wav`. It is the fixture behind the Phase 3 role-tagged-dialogue
+  evidence.
 
 ```powershell
 ./tools/make-long-testmedia.ps1
 dotnet run --project tools/FileTranscribe -- --file testmedia/long-continuous.wav --mode high
 dotnet run --project tools/FileTranscribe -- --file testmedia/long-gaps.wav --mode high
+dotnet run --project tools/FileTranscribe -- --file testmedia/two-speakers.wav --mode high --diarize
 ```
 
 `testmedia/` is **gitignored** (as is `third_party/`), so these fixtures are **never committed** —
-regenerate them locally before running long-audio work. They are the fixtures behind the Phase 2
-evidence in [`FILE_TRANSCRIPTION_TEST_REPORT.md`](FILE_TRANSCRIPTION_TEST_REPORT.md) (§4.5).
+regenerate them locally before running file-transcription work. They are the fixtures behind the
+Phase 2 evidence in [`FILE_TRANSCRIPTION_TEST_REPORT.md`](FILE_TRANSCRIPTION_TEST_REPORT.md) (§4.5) and
+the Phase 3 evidence (§4.6). Building `two-speakers.wav` requires the two-speaker eval sources
+(`models/_diar-eval/…`) from the diarization models.
 
 ## 7. Conventions
 

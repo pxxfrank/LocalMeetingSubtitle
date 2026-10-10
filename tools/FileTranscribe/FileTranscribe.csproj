@@ -13,7 +13,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\LocalMeetingSubtitle.Core\LocalMeetingSubtitle.Core.csproj" />
     <ProjectReference Include="..\..\src\LocalMeetingSubtitle.Asr\LocalMeetingSubtitle.Asr.csproj" />
+    <ProjectReference Include="..\..\src\LocalMeetingSubtitle.Audio\LocalMeetingSubtitle.Audio.csproj" />
     <ProjectReference Include="..\..\src\LocalMeetingSubtitle.Media\LocalMeetingSubtitle.Media.csproj" />
+    <ProjectReference Include="..\..\src\LocalMeetingSubtitle.Storage\LocalMeetingSubtitle.Storage.csproj" />
     <ProjectReference Include="..\..\src\LocalMeetingSubtitle.ModelDownloads\LocalMeetingSubtitle.ModelDownloads.csproj" />
   </ItemGroup>
 
