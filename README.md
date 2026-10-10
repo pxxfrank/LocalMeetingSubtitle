@@ -6,6 +6,11 @@
 
 > **候选发布 ≠ 已验收。** 本版本可交付评审与实机试用，但在目标笔记本上完成验收前，不应宣称已满足产品指标（延迟、CPU、内存、3 小时稳定性）。
 
+> **V0.5（离线文件转写 + 角色标注对话）进行中 / in progress：** 已加入「本地音频/视频导入 → 离线解码
+> （捆绑 **LGPL v3 FFmpeg**）→ 离线 ASR」的**解码层**（**Phase 0–1 完成**）；分段长音频转写、角色标注对话、
+> 作业队列/断点续跑、对话编辑界面、DOCX 等导出、安装包打包均**未开始**。详见
+> [`docs/ARCHITECTURE_V05.md`](docs/ARCHITECTURE_V05.md) 与 [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)（FT-01..FT-25）。
+
 ---
 
 ## 这是什么 / What it is
@@ -27,6 +32,10 @@
 ```powershell
 # 0) 若 .NET 8 SDK 未加入 PATH（开发主机装于 %USERPROFILE%\.dotnet）：
 $env:PATH = "$env:USERPROFILE\.dotnet;$env:PATH"
+
+# 0.5) V0.5 离线文件转写需要 FFmpeg（LGPL v3）：拉到 third_party/ffmpeg（不入库），
+#      脚本会校验 SHA-256 并拒绝 GPL/nonfree 构建。缺失时应用仍可启动（仅文件转写不可用）。
+./tools/fetch-ffmpeg.ps1
 
 # 1) 构建
 dotnet build LocalMeetingSubtitle.sln -c Release
@@ -55,11 +64,12 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj `
 
 ```
 13-meetingsubtitle/
-├─ src/                          # 8 个产品工程（7 个 + ModelDownloads）
+├─ src/                          # 9 个产品工程（8 个 + ModelDownloads）
 │  ├─ LocalMeetingSubtitle.App         # WPF UI、DI 组合根、托盘、悬浮字幕（可执行）
 │  ├─ LocalMeetingSubtitle.Core        # 契约(接口)+模型、音频数学、流水线、热词/纠正
 │  ├─ LocalMeetingSubtitle.Audio       # NAudio WASAPI 回环采集
 │  ├─ LocalMeetingSubtitle.Asr         # sherpa-onnx 引擎 + 模型目录 + 原生库探测
+│  ├─ LocalMeetingSubtitle.Media       # V0.5：本地音频/视频探测 + FFmpeg 解码为 16 kHz PCM
 │  ├─ LocalMeetingSubtitle.Storage     # SQLite(Microsoft.Data.Sqlite, WAL) 仓储
 │  ├─ LocalMeetingSubtitle.Export      # TXT / SRT / Markdown 导出
 │  ├─ LocalMeetingSubtitle.Diagnostics # CPU/内存/流水线性能监控
@@ -83,10 +93,13 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj `
 | 文档 | 语言 | 内容 |
 | --- | --- | --- |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | EN | 模块划分、数据流、线程模型、SQLite 表结构、接口清单、`ModelDownloads` 隔离原因 |
+| [`docs/ARCHITECTURE_V05.md`](docs/ARCHITECTURE_V05.md) | EN | **V0.5**：离线文件转写的目标、双入口、模块图（含新 `LocalMeetingSubtitle.Media`）、媒体数据流、规划中的迁移 5 表、线程/资源规则、Phase 0–8（状态）、已验 vs 未验 |
 | [`docs/MODEL_SELECTION.md`](docs/MODEL_SELECTION.md) | EN | 模型候选 A/B/C、HF 校验日志、基准结果、热词兼容性（暂定） |
 | [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) | EN | 测试分类、命令、`--filter` 用法、`ThreeHourSoak` 手动命令、最近一次结果 |
 | [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) | EN | 实测数据、方法学、目标 vs 实际、目标机未测量的说明 |
-| [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) | EN | AC-01..AC-20 验收矩阵与状态 |
+| [`docs/PERFORMANCE_REPORT.md`](docs/PERFORMANCE_REPORT.md) | EN | **V0.5**：仅记录**实测**数据（ASR RTF vs 线程数、热词成本、说话人分离、文件解码墙钟）；无任何外推到目标机 |
+| [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) | EN | AC-01..AC-20 / SD-01..SD-18 / **FT-01..FT-25（V0.5）** 验收矩阵与状态 |
+| [`docs/FILE_TRANSCRIPTION_TEST_REPORT.md`](docs/FILE_TRANSCRIPTION_TEST_REPORT.md) | EN | **V0.5** 文件转写真实测试报告（范围、环境、命令、结果表、未覆盖项均标 NOT_TESTED） |
 | [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) | EN | 已修复缺陷(P1/P2)、未决限制(P3)、阻塞项 |
 | [`docs/CODEX_PROGRESS.md`](docs/CODEX_PROGRESS.md) | EN | 阶段进度、构建/测试结果、后续任务、阻塞项、重要命令 |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | EN | ADR 风格架构决策 D1–D10 |
@@ -94,6 +107,7 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj `
 | [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) | **中文** | 面向用户的使用与排查指南 |
 | [`LICENSE`](LICENSE) | — | 项目许可证（MIT） |
 | [`docs/THIRD-PARTY-NOTICES.md`](docs/THIRD-PARTY-NOTICES.md) | EN | 第三方组件与模型许可说明 |
+| [`docs/LICENSES.md`](docs/LICENSES.md) | EN | **V0.5**：合并的第三方许可汇总（FFmpeg LGPL v3「独立程序」再分发说明、SHA-256/版本记录位置、sherpa-onnx / 分离模型 / NAudio / Microsoft.Data.Sqlite / BCL） |
 | [`docs/SHERPA_CSHARP_API_DUMP.txt`](docs/SHERPA_CSHARP_API_DUMP.txt) | — | sherpa-onnx C# 程序集反射导出的原始 API 清单 |
 
 ## 离线保证 / Offline guarantee

@@ -31,6 +31,11 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 | P3-9 | Diarization models are downloaded, not bundled in the publish | Low | Open |
 | P3-10 | Real-time + diarization concurrency not measured on target hardware | Low | Open |
 | P3-11 | Built-in lexicon: the bundled zh-14M model cannot encode several lexicon terms | Low | Open |
+| P3-12 | Bundled FFmpeg is LGPL (decode-only): no libx264, so H.264 **encoding** is unavailable | Low | Open (harmless — 字幕君 only decodes) |
+| P3-13 | FFmpeg not yet bundled into the installer / portable ZIP | Low | Open → V0.5 Phase 8 |
+| P3-14 | File transcription Phases 2–8 not implemented | Low | Open |
+| P3-15 | No `AGENTS.md` in the repo (the V0.5 spec's session-startup ritual references it) | Low | Open |
+| P3-16 | No reference transcript → file-transcription CER/WER not measured | Low | Open |
 | BLOCKED-1 | Full Start→transcribe→persist UI path | P0 | **CLOSED (2026-10-09, dev host)** — a UI-driven Start on the published build produced and persisted real subtitles |
 | BLOCKED-2 | No real-meeting 3-hour stability run | P0 (target) | Blocked (`ThreeHourSoak` never executed) |
 | BLOCKED-3 | Installer signature is self-signed / untrusted | P1 (release) | Partial (MSI + Setup.exe produced & signed; no CA-issued certificate) |
@@ -244,6 +249,60 @@ following limitations are known and accepted for this version.
   is **not measured** — only its cost is (measured RTF 0.059 with 116 hotwords vs 0.071 without, i.e. no
   regression; output on unrelated audio changes only by a different beam path).
 - **Workaround:** extend the hotword list with your own terms and/or select the bilingual model.
+
+### V0.5 — open limitations (P3)
+
+V0.5 adds an **offline file-transcription** workflow (import audio/video → FFmpeg decode → offline
+ASR → diarization → role-tagged dialogue). **Only Phase 0–1 (FFmpeg tooling + media decode layer) is
+implemented**; the following are known and accepted for this state.
+
+#### P3-12 — The bundled FFmpeg is LGPL and cannot encode H.264
+
+- **Impact:** the pinned FFmpeg build is **LGPL v3** (by design — so it is redistributable as a
+  separate program; see [`LICENSES.md`](LICENSES.md)). Because it has **no libx264** (which is GPL),
+  **H.264 *encoding* is unavailable**.
+- **Why this is harmless:** 字幕君 only ever **decodes** media; H.264 **decoding** is supported by the
+  native FFmpeg decoders. The build's other encoders (libmp3lame, aac, libvorbis, libopus) are present
+  for the test media.
+- **Workaround:** none needed.
+
+#### P3-13 — FFmpeg is not yet bundled into the installer / portable ZIP
+
+- **Impact:** FFmpeg is provisioned for development/build by `tools/fetch-ffmpeg.ps1` into
+  `third_party/ffmpeg/` (gitignored); the V0.4.0 installer and portable ZIP **do not contain FFmpeg**
+  yet, so file transcription would fail with `MediaErrorKind.ToolMissing` on such a build.
+- **Workaround (dev):** run `./tools/fetch-ffmpeg.ps1` before building; the app's `.csproj` copies
+  `third_party/ffmpeg` next to the app **when present**.
+- **Planned:** V0.5 Phase 8 (bundle FFmpeg into the release artifacts).
+
+#### P3-14 — File transcription Phases 2–8 not implemented
+
+- **Impact:** only the media-decode layer exists. There is **no** segment-level/VAD pipeline, **no**
+  `ITranscriptionJobService`, **no** `ITranscriptAlignmentService`, **no** migration-5 tables
+  (`MediaFile`/`TranscriptionJob`/`TranscriptionChunk`/`TranscriptSegment`/`JobCheckpoint`), **no**
+  DOCX export, **no** dialogue editor UI, and **no** player/drag-drop. The database schema is still at
+  **migration 4**.
+- **Workaround:** none — the feature is not wired into the app; this is in-progress work.
+- **Planned:** Phases 2–8 (see [`ARCHITECTURE_V05.md`](ARCHITECTURE_V05.md)); per-item status in
+  [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) (FT-01 .. FT-25).
+
+#### P3-15 — No `AGENTS.md` in the repository
+
+- **Impact:** the V0.5 spec's session-startup ritual references an `AGENTS.md` at the repo root, which
+  **does not exist**. There is therefore no `AGENTS.md` for an agent to read at session start.
+- **Mitigation in place:** [`CODEX_PROGRESS.md`](CODEX_PROGRESS.md) (phase progress, build/test
+  results, **resume block**, important commands) plus [`DEVELOPMENT.md`](DEVELOPMENT.md) (environment
+  setup, build/test/publish, model + FFmpeg tooling) already serve that role. The V0.5 update entry in
+  `CODEX_PROGRESS.md` contains an explicit resume block for the next session.
+- **Proposed:** add a short root `AGENTS.md` that points at `CODEX_PROGRESS.md` + `DEVELOPMENT.md`
+  and restates the doc-only/`.cs`-frozen conventions — **not yet created**.
+
+#### P3-16 — No reference transcript → file-transcription CER/WER not measured
+
+- **Impact:** there is **no reference transcript** on the dev host, so the accuracy of file
+  transcription (**CER / WER**) is **not measured** — only that decoded media produces plausible
+  Chinese text. No accuracy claim is made.
+- **Workaround:** none; accuracy measurement needs a reference transcript, which is not available.
 
 ## Blocked / NOT_TESTED items
 

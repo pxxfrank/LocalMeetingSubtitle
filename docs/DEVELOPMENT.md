@@ -141,7 +141,75 @@ dotnet run --project tools/AsrBenchmark -- --wav models/sherpa-onnx-streaming-zi
 dotnet run --project tools/OfflineVerification -- --wav models/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/test_wavs/0.wav
 ```
 
-## 6. Conventions
+## 6. File transcription / FFmpeg (V0.5)
+
+V0.5 decodes local audio/video through a **separately distributed LGPL FFmpeg** (see
+[`LICENSES.md`](LICENSES.md)). FFmpeg is **not** committed; it is fetched on demand.
+
+### 6.1 Fetch FFmpeg
+
+```powershell
+# Download + verify (SHA-256) + extract the pinned LGPL build into third_party/ffmpeg (gitignored)
+./tools/fetch-ffmpeg.ps1
+./tools/fetch-ffmpeg.ps1 -Force   # re-download even if present
+```
+
+The script pins the artifact by **URL + SHA-256** (`85e26d3d…58a55`), extracts only the runtime files
+(`ffmpeg.exe`, `ffprobe.exe`, the `av*` / `sw*` DLLs, `LICENSE.txt`), then runs `ffmpeg -version` and
+**refuses** a GPL/nonfree build. At runtime `FFmpegLocator` searches, in order: an explicit directory,
+`<app>\ffmpeg\bin` (the published layout), the dev tree `third_party\ffmpeg\bin` (walking up from the
+app), then `PATH`. A clone **without** FFmpeg still builds; only file transcription is unavailable
+(`MediaErrorKind.ToolMissing`).
+
+### 6.2 Generate the test media
+
+`testmedia/` is **gitignored**. Generate it from the existing Chinese sample with the fetched FFmpeg —
+every file is ~5.6 s (the length of the source `0.wav`):
+
+```powershell
+$ff  = "third_party/ffmpeg/bin/ffmpeg.exe"
+$src = "models/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/test_wavs/0.wav"
+New-Item -ItemType Directory -Force -Path testmedia | Out-Null
+
+# audio-only containers
+& $ff -y -i $src -ac 1 testmedia/0.mp3
+& $ff -y -i $src -ac 1 testmedia/0.m4a
+& $ff -y -i $src -ac 1 -c:a aac testmedia/0.aac
+& $ff -y -i $src -ac 1 testmedia/0.flac
+& $ff -y -i $src -ac 1 testmedia/0.ogg
+& $ff -y -i $src -ac 1 testmedia/0.mkv
+& $ff -y -i $src -ac 1 testmedia/0.mov
+& $ff -y -i $src -ac 1 testmedia/0.avi
+
+# video container (mpeg4 video + aac audio): proves audio extraction from a video
+& $ff -y -i $src -f lavfi -i color=c=black:s=320x240 -shortest -c:v mpeg4 -c:a aac testmedia/0.mp4
+
+# video only (no audio): must raise NoAudioTrack
+& $ff -y -f lavfi -i color=c=black:s=320x240 -t 5.6 -c:v mpeg4 -an testmedia/noaudio.mp4
+
+# two audio tracks: track selection / out-of-range
+& $ff -y -i $src -i $src -map 0:a -map 1:a -c:a aac testmedia/two-tracks.mp4
+```
+
+> The exact durations follow the source `0.wav` (~5.6 s); the tests assert a 5.0–6.5 s window rather
+> than a fixed value.
+
+### 6.3 Tests
+
+```powershell
+# Decode layer: probe + decode of real media (real FFmpeg)
+dotnet test tests/LocalMeetingSubtitle.IntegrationTests/LocalMeetingSubtitle.IntegrationTests.csproj `
+    -c Debug --filter "FullyQualifiedName~MediaDecodeTests"
+
+# First end-to-end link: media -> FFmpeg PCM -> sherpa-onnx -> Chinese text
+dotnet test tests/LocalMeetingSubtitle.IntegrationTests/LocalMeetingSubtitle.IntegrationTests.csproj `
+    -c Debug --filter "FullyQualifiedName~MediaToAsrEndToEndTests"
+```
+
+Both suites **skip** (they never fake a result) when `testmedia/`, the bundled FFmpeg, or the ASR
+model are absent, so a clean clone stays green.
+
+## 7. Conventions
 
 - `Directory.Build.props` sets `Nullable=enable`, `ImplicitUsings=enable`, `LangVersion=latest`,
   `Version=0.1.0`. Warnings are not errors (`TreatWarningsAsErrors=false`).

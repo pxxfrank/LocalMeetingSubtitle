@@ -2,12 +2,16 @@
 
 ## Current phase
 
-**Phase 10 complete — release candidate assembled, pending target-hardware acceptance.**
-The product builds, tests pass on the development host, a real model decodes Chinese, offline
-guarantees are verified, and a self-contained release artifact is produced. The remaining work is
-**acceptance on the real Windows 11 target hardware**.
+**V0.4.0 released (HEAD `554c8eb`); V0.5 "offline file transcription + role-tagged dialogue" is in
+progress — Phases 0–1 complete, Phase 2 not started.**
 
-Status banner: **候选发布版本 — 待实机验收 / Release candidate — pending hardware acceptance.**
+The V0.4 live-subtitle product builds, its tests pass on the development host, a real model decodes
+Chinese, offline guarantees are verified, and a self-contained release artifact is produced. V0.5 adds
+a bundled **LGPL FFmpeg** media-decode layer (import audio/video → 16 kHz mono PCM). The remaining V0.5
+work (segmented offline ASR, role-tagged dialogue, job queue, editor UI, export, packaging) is **not
+started**, and the remaining work overall is **acceptance on the real Windows 11 target hardware**.
+
+Status banner: **候选发布版本 — 待实机验收；V0.5（离线文件转写）进行中 / Release candidate (V0.4.0) — pending hardware acceptance; V0.5 (offline file transcription) in progress.**
 
 ## Completed work by phase
 
@@ -641,3 +645,77 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj -c R
 - **导出格式保持不变**：TXT / Markdown / CSV 仍为 `HH:MM:SS`，SRT 仍为 `HH:MM:SS,mmm`（格式规范要求）。
 - 无测试断言显示格式（既有 `[00:00:00]` 断言都在**导出**测试中，未受影响）；构建 0 错误，
   单元 157 / 集成 14 / 性能 3（+1 跳过）全通过。
+
+## Update — 离线文件转写 V0.5 Phase 0–1（FFmpeg 解码层）(2026-10-10)
+
+**目标：** 在**不破坏**现有实时字幕的前提下，新增**离线文件转写**：导入本地音频/视频 → 离线解码 →
+离线 ASR → 说话人分离 → 角色标注对话 → 导出。**当前仅 Phase 0–1 完成，Phase 2 及以后未开始。**
+
+### 依赖决策：FFmpeg（LGPL v3，许可已核实、非假定）
+- 新增 **`tools/fetch-ffmpeg.ps1`**：下载 BtbN/FFmpeg-Builds `latest` 资产
+  `ffmpeg-master-latest-win64-lgpl-shared.zip`（**75.8 MB**），按 **URL + SHA-256**
+  （`85e26d3d77c17393e56e49132fda0905a3ced925942e1d8d7d2ebe0a28d58a55`）双重固定；校验哈希后
+  **仅解出运行期文件**到 `third_party/ffmpeg/`（gitignore）+ `LICENSE.txt`。
+- 该构建为 **LGPL v3**：`ffmpeg -version` 的 config 含 **`--enable-version3 --enable-shared`**，
+  **无 `--enable-gpl` / `--enable-nonfree`**；脚本在解包后运行 `ffmpeg -version` 并**拒绝** GPL/nonfree 构建。
+  已安装版本 `ffmpeg version N-127259-gb91a82d6dd-20261009`（build `Latest Auto-Build (2026-10-09 14:16)`）；
+  预置体积 **153.7 MB**（`avcodec-63.dll` 87.65 MB、`avfilter-12.dll` 30.2 MB、`avformat-63.dll` 24.52 MB 等）。
+- **作为独立程序**随包分发（仅以子进程调用，绝不链接）→ 合规；完整说明见 **`docs/LICENSES.md`**。
+- 注意：LGPL 构建**无 libx264** → **不能 H.264 编码**（我们**只解码**，H.264 解码受支持）；内置
+  OpenCL/AMF/nvenc 钩子（未用，纯 CPU 解码）。
+
+### Phase 0–1 交付（全部增量）
+- 契约/模型：`Core/Models/MediaModels.cs`（`MediaKind`/`AudioStreamInfo`/`MediaInfo`/`PcmBlock`/`MediaDecodeRequest`）、
+  `Core/Abstractions/MediaAbstractions.cs`（`IMediaDecodeService`/`MediaDecodeException`/`MediaErrorKind`/`MediaToolPaths`）。
+- 新工程 **`src/LocalMeetingSubtitle.Media`**：
+  - `FFmpegLocator`（应用目录 `ffmpeg\bin` → 开发树 `third_party\ffmpeg\bin` → `PATH`）；
+  - `ProcessRunner`（**仅用 `ProcessStartInfo.ArgumentList`**，无 shell → 注入安全、Unicode/空格/长路径安全）；
+  - `FFprobeMediaProbe`（`ffprobe -print_format json -show_format -show_streams` → `MediaInfo`，可识别无音轨/attached_pic）；
+  - `FFmpegMediaDecodeService`（`ffmpeg -map 0:a:<N> -vn -sn -dn -f f32le -acodec pcm_f32le -ac 1 -ar 16000 pipe:1`，
+    按 **1 秒 `PcmBlock`** 流式输出，**整文件从不缓冲**；取消杀进程树）。
+- App：DI 注册 `IMediaDecodeService`（**延迟解析**，缺 FFmpeg 仍能启动）；csproj 仅在 `third_party/ffmpeg`
+  存在时随包拷贝。
+- 测试：`MediaDecodeTests`（15 例）+ `MediaToAsrEndToEndTests`（4 例）。
+
+### 实测证据（开发主机）
+- `0.mp4`（视频）→ 探针 `kind=Video container=mov,mp4,m4a,3gp,3g2,mj2 duration=5.61s audioStreams=1`
+  → 解码 **89 784 采样 = 5.61 s** → ASR 文本 `对我做了介绍那么我想说的是大家如果对我的研究感兴趣呢`。
+  `0.mkv`（matroska, 5.63 s）、`0.ogg`（ogg, 5.63 s）、`0.mp3`（mp3, 5.64 s）同形状。
+- `noaudio.mp4` → `HasAudio=false` → `MediaDecodeException(NoAudioTrack)`；
+  `two-tracks.mp4` 音轨 1 可解码、索引 9 → `StreamIndexOutOfRange`；含**中文+空格**的路径也能解码。
+- 完整报告：`docs/FILE_TRANSCRIPTION_TEST_REPORT.md`。
+
+### 测试
+- 单元 **157 → 159**；集成 **14 → 33**（`MediaDecodeTests` 15 + `MediaToAsrEndToEndTests` 4）；
+  性能 **3（+1 跳过：`ThreeHourSoak`）**；构建 **0 错误**。
+- **无回归**：既有实时字幕套件全部保持通过。
+
+### 未完成（Phase 2–8 均未开始）
+Phase 2 分段长音频离线 ASR（VAD）；Phase 3 角色标注对话（`ITranscriptAlignmentService` + 复用 V0.4
+`ISpeakerDiarizationService`）；Phase 4 作业队列 + 检查点/续跑（`ITranscriptionJobService`）；Phase 5 对话编辑 UI；
+Phase 6 TXT/Markdown/CSV/SRT/**DOCX** 导出；Phase 7 UX/性能；Phase 8 回归 + 发布（把 FFmpeg 打进安装包）。
+数据库仍为**迁移 4**；无 `MediaFile`/`TranscriptionJob`/`TranscriptionChunk`/`TranscriptSegment`/`JobCheckpoint` 表。
+设计/状态见 `docs/ARCHITECTURE_V05.md`；逐项状态见 `docs/RELEASE_CHECKLIST.md`（FT-01..FT-25）。
+
+### 断点续跑信息（下一会话）
+- **当前阶段：** V0.5 Phase 1 完成；**Phase 2 未开始**。
+- **已完成：** FFmpeg 工具链（Phase 0）+ 媒体解码层（Phase 1），含契约、新工程、DI、测试。
+- **下一步（Phase 2）：** 在已解码的 16 kHz PCM 上做**分段长音频离线 ASR**（VAD/能量分段 + 逐段
+  sherpa-onnx 离线解码），产出**带全局时间戳的句子**。
+- **构建/测试命令：**
+  ```powershell
+  $env:PATH = "$env:USERPROFILE\.dotnet;$env:PATH"
+  dotnet build LocalMeetingSubtitle.sln -c Release
+  dotnet test tests/LocalMeetingSubtitle.UnitTests/LocalMeetingSubtitle.UnitTests.csproj -c Debug
+  dotnet test tests/LocalMeetingSubtitle.IntegrationTests/LocalMeetingSubtitle.IntegrationTests.csproj -c Debug --filter "FullyQualifiedName~MediaDecodeTests"
+  dotnet test tests/LocalMeetingSubtitle.IntegrationTests/LocalMeetingSubtitle.IntegrationTests.csproj -c Debug --filter "FullyQualifiedName~MediaToAsrEndToEndTests"
+  ```
+- **取 FFmpeg：** `./tools/fetch-ffmpeg.ps1`（自动校验 SHA-256 + LGPL）。
+- **生成测试媒体：** 见 `docs/DEVELOPMENT.md` 的「File transcription / FFmpeg」；`testmedia/` 与 `third_party/`
+  均为 gitignore。
+- **下一步要改的文件：** 新增分段/编排契约（如 `Core/Abstractions/` 下的分段/离线解码接口）、`Core/Media/*`
+  分段器与离线 ASR 编排、`Asr/*` 的逐段离线解码接线；测试在 `tests/LocalMeetingSubtitle.IntegrationTests/`
+  下新增分段转写用例。
+- **下一验收目标：** `RELEASE_CHECKLIST` 的 **FT-05..FT-08**（离线 ASR 文本/分段、全局时间戳、长音频 VAD 分段）。
+- **诚实边界：** 全部目标机（Win11 + Core Ultra 7 155H）验收仍 **BLOCKED/NOT_TESTED**；长音频 **CER/WER**
+  因**无参考文本**未测。
