@@ -21,6 +21,13 @@ obj/
 /dist/
 /artifacts/
 
+# Third-party redistributable binaries (FFmpeg LGPL build). Downloaded by
+# tools/fetch-ffmpeg.ps1; not committed (large binaries + LGPL "separate program").
+/third_party/
+
+# Generated media used for real decode tests (gitignored; produced by ffmpeg)
+/testmedia/
+
 # Local runtime data
 /data/
 /logs/

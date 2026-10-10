@@ -12,6 +12,7 @@ using LocalMeetingSubtitle.Core.Models;
 using LocalMeetingSubtitle.Core.Speakers;
 using LocalMeetingSubtitle.Diagnostics;
 using LocalMeetingSubtitle.Export;
+using LocalMeetingSubtitle.Media;
 using LocalMeetingSubtitle.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -225,6 +226,17 @@ public partial class App : Application
         services.AddSingleton<IAudioCaptureService>(sp => sp.GetRequiredService<WasapiLoopbackCaptureService>());
         services.AddSingleton<IPerformanceMonitor>(_ => new ProcessPerformanceMonitor());
         services.AddSingleton<ISubtitleExportService>(_ => new SubtitleExportService());
+
+        // V0.5 media decode: local audio/video probing + PCM extraction through the bundled FFmpeg.
+        // Resolved lazily so a deployment without FFmpeg still starts (probing/decoding then fails
+        // with MediaErrorKind.ToolMissing).
+        services.AddSingleton<IMediaDecodeService>(sp =>
+        {
+            var log = sp.GetRequiredService<IAppLogger>();
+            var tools = FFmpegLocator.Resolve();
+            log.Info($"Media decode toolchain ready: ffmpeg='{tools.FfmpegPath}', ffprobe='{tools.FfprobePath}'.");
+            return new FFmpegMediaDecodeService(tools, log);
+        });
 
         // The model manager is used offline (installed-model checks); recognition itself never
         // touches the network.

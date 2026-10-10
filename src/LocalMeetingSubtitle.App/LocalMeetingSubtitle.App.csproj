@@ -42,6 +42,16 @@
     <ProjectReference Include="..\LocalMeetingSubtitle.Storage\LocalMeetingSubtitle.Storage.csproj" />
     <ProjectReference Include="..\LocalMeetingSubtitle.Export\LocalMeetingSubtitle.Export.csproj" />
     <ProjectReference Include="..\LocalMeetingSubtitle.Diagnostics\LocalMeetingSubtitle.Diagnostics.csproj" />
+    <ProjectReference Include="..\LocalMeetingSubtitle.Media\LocalMeetingSubtitle.Media.csproj" />
+  </ItemGroup>
+
+  <!-- Ship the bundled LGPL FFmpeg next to the app (ffmpeg\bin\...). Only when provisioned
+       by tools/fetch-ffmpeg.ps1, so a clone without FFmpeg still builds. -->
+  <ItemGroup Condition="Exists('..\..\third_party\ffmpeg')">
+    <None Include="..\..\third_party\ffmpeg\**\*"
+          Link="ffmpeg\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

@@ -25,6 +25,7 @@
     <ProjectReference Include="..\..\src\LocalMeetingSubtitle.Storage\LocalMeetingSubtitle.Storage.csproj" />
     <ProjectReference Include="..\..\src\LocalMeetingSubtitle.Export\LocalMeetingSubtitle.Export.csproj" />
     <ProjectReference Include="..\..\src\LocalMeetingSubtitle.Diagnostics\LocalMeetingSubtitle.Diagnostics.csproj" />
+    <ProjectReference Include="..\..\src\LocalMeetingSubtitle.Media\LocalMeetingSubtitle.Media.csproj" />
   </ItemGroup>
 
 </Project>
