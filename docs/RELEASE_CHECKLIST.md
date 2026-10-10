@@ -88,11 +88,12 @@ Legend: `PASS` = verified with evidence · `PARTIAL` = some sub-checks pass, oth
 > `NOT_TESTED` / `BLOCKED` — never `PASS`. The FT numbering and titles below are **reconstructed from
 > the V0.5 file-transcription spec** and anchored to concrete evidence, not invented results.
 >
-> **Scope note: only V0.5 Phase 0–1 (FFmpeg tooling + media decode layer) is implemented.** Phases
-> 2–8 (segmented long-audio ASR, role-tagged dialogue, job queue / checkpoints, dialogue editor UI,
-> file-job export, packaging) are **NOT_STARTED**, so their items are `NOT_TESTED`. Where a V0.4
-> feature already covers the *equivalent capability*, the row says so ("重用 V0.4 …") but is still
-> `NOT_TESTED` for the file-job path.
+> **Scope note: V0.5 Phase 0–2 are implemented** — Phase 0–1 (FFmpeg tooling + media decode layer)
+> **and Phase 2 (segmented long-audio offline ASR: VAD segmentation → per-segment decode → global
+> timestamps, with a three-mode catalog)**. Phases 3–8 (role-tagged dialogue, job queue / checkpoints,
+> dialogue editor UI, file-job export, packaging) are **NOT_STARTED**, so their items are `NOT_TESTED`.
+> Where a V0.4 feature already covers the *equivalent capability*, the row says so ("重用 V0.4 …") but is
+> still `NOT_TESTED` for the file-job path. **Every Phase 2 result is dev-host only — no target hardware.**
 >
 > Decode-level evidence: [`FILE_TRANSCRIPTION_TEST_REPORT.md`](FILE_TRANSCRIPTION_TEST_REPORT.md).
 > Design + phase status: [`ARCHITECTURE_V05.md`](ARCHITECTURE_V05.md).
@@ -103,10 +104,10 @@ Legend: `PASS` = verified with evidence · `PARTIAL` = some sub-checks pass, oth
 | FT-02 | 导入真实 MP3（及 M4A/AAC/FLAC/OGG）并离线解码 | 同上 + `MediaToAsrEndToEndTests` | 解码出 16 kHz 单声道 PCM | `0.mp3` 探针 `container=mp3 duration=5.64s`；解码 → 中文文本 | `MediaToAsrEndToEndTests`（`0.mp3`） | 开发主机 | **PASS** |
 | FT-03 | 导入真实 MP4（视频）并提取其中的音轨 | `MediaDecodeTests.Decoding_a_mp4_extracts_16kHz_mono_audio` + `MediaToAsrEndToEndTests` | 从视频容器抽出音频并解码 | `0.mp4` 探针 `kind=Video container=mov,mp4,m4a,3gp,3g2,mj2 duration=5.61s audioStreams=1` → **89 784 采样 = 5.61 s** → 文本 `对我做了介绍那么我想说的是大家如果对我的研究感兴趣呢` | 集成测试输出 | 开发主机 | **PASS** |
 | FT-04 | 导入其他视频容器（MKV/MOV/AVI）并提取音轨 | 同上 | 抽出音频并解码 | `0.mkv`(matroska, 5.63 s)、`0.ogg`(ogg, 5.63 s) 解码出文本；`0.mov`/`0.avi` 探针 `HasAudio=true`。**附：多音轨** `two-tracks.mp4` 选音轨 1 可解码、索引 9 → `StreamIndexOutOfRange`（解码层已支持） | `MediaDecodeTests` / `MediaToAsrEndToEndTests` | 开发主机 | **PASS** |
-| FT-05 | 解码音频经离线 ASR 得到中文文本 | `MediaToAsrEndToEndTests` | 产出中文文本 | **已证实**：`0.mp4/mkv/ogg/mp3` 解码 → 中文文本；但为整段一次性喂入引擎，**未经分段/VAD 流水线** | `MediaToAsrEndToEndTests` | 开发主机 | **PARTIAL** |
-| FT-06 | 离线 ASR 输出句子级分段（utterance 边界） | 集成测试 | 输出逐句分段 | 复用引擎的 endpoint/分段能力可产出部分/终稿；**文件任务的分段流水线未构建** | （Phase 2） | 开发主机 | **PARTIAL** |
-| FT-07 | 长音频（≥1 小时）分段 + VAD 离线转写 | 端到端长音频 | 正确分段并转写 | 未执行（Phase 2 未开始） | — | 开发主机 | **NOT_TESTED** |
-| FT-08 | 每条音频块/句子保留全局时间戳 | 代码 + 集成测试 | 全局时间戳 | 每条 **1 秒 `PcmBlock` 带全局起始时间**（`TimeSpan Start`，已实现并随解码输出）；**句子级时间戳未构建** | `PcmBlock` / `FFmpegMediaDecodeService` | 开发主机 | **PARTIAL** |
+| FT-05 | 解码音频经离线 ASR 得到中文文本 | `FileTranscriptionTests` / `FileTranscribe` CLI | 产出中文文本 | **Phase 2 已实现**：`OfflineTranscriptionEngine` 在 VAD 分段上逐段离线解码；`testmedia/0.mp4`（5.612 s）三模式均产出中文文本（Fast 0.0920 / Standard 0.0974 / High 0.1024，见 `FILE_TRANSCRIPTION_TEST_REPORT.md` §4.5）；**标准与快速输出不同 ⇒ 束搜索确实生效** | `FileTranscriptionTests`（4 theory + 4 fact）、`FileTranscribe` 输出 | 开发主机 | **PASS (dev host)** |
+| FT-06 | 离线 ASR 输出句子级分段（utterance 边界） | `FileTranscriptionTests` | 输出逐句分段 | **Phase 2 已实现**：VAD 分段 + 逐段解码产出句级 `OfflineTranscriptSegment`（`Start`/`End`/`Text`）；`long-gaps.wav` → **10 段**、`long-continuous.wav` → **2 段** | `FILE_TRANSCRIPTION_TEST_REPORT.md` §4.5 | 开发主机 | **PASS (dev host)** |
+| FT-07 | 长音频（≥1 小时）分段 + VAD 离线转写 | 端到端长音频 | 正确分段并转写 | **VAD 分段已在 56 s / 65 s 素材上验证**（`long-gaps.wav` 10 段、单调不重叠；`long-continuous.wav` 2 段且 30 s 上限触发）；**但 ≥1 小时的素材未测试**（开发主机**无 >1 h 文件**） | `FILE_TRANSCRIPTION_TEST_REPORT.md` §4.5 | 开发主机 | **PARTIAL** |
+| FT-08 | 每条音频块/句子保留全局时间戳 | `FileTranscriptionTests` | 全局时间戳 | **Phase 2 已实现**：句级全局时间戳 = 首个 `PcmBlock.Start` + 累计采样索引；裁前导静音、接续段起点钳到前段终点（时间轴不重叠）；`long-gaps.wav` 10 段时间戳单调、互不重叠 | `FILE_TRANSCRIPTION_TEST_REPORT.md` §4.5 | 开发主机 | **PASS (dev host)** |
 | FT-09 | 文件任务中可选择要转写的音轨 | 端到端 | 选择音轨并转写 | 未执行（文件任务 UI/作业模型未构建）；**解码层已支持 `AudioStreamIndex`**（见 FT-04 附） | — | 开发主机 | **NOT_TESTED** |
 | FT-10 | 任务级错误处理（损坏/不支持媒体不静默、可跳过） | 端到端 | 明确报错/跳过 | 未执行（Phase 4）；**解码层已映射类型化错误** `FileNotFound/NotReadable/NoAudioTrack/StreamIndexOutOfRange` | `MediaDecodeTests`（`NoAudioTrack`/`FileNotFound`） | 开发主机 | **NOT_TESTED** |
 | FT-11 | 断点续跑（崩溃/中断后可恢复） | 端到端 | 可恢复 | 未执行（Phase 4 未开始；无 `JobCheckpoint` 表） | — | 开发主机 | **NOT_TESTED** |
@@ -121,16 +122,19 @@ Legend: `PASS` = verified with evidence · `PARTIAL` = some sub-checks pass, oth
 | FT-20 | 解码/转写全程离线（无网络） | 静态 + `OfflineVerification` | 运行期无网络 | 解码路径（FFmpeg/sherpa-onnx 本地）无网络，`OfflineVerification` 仍 **5/5 PASS**；**完整文件任务流未构建** | `OfflineVerification` + 代码 | 开发主机 | **PARTIAL** |
 | FT-21 | 任务取消与失败清理 | 端到端 | 可取消、状态一致、清理 | 未执行（Phase 4）。**解码层已实现**：取消会杀死子进程树（`ProcessRunner` 注册 `CancellationToken`） | `ProcessRunner` | 开发主机 | **NOT_TESTED** |
 | FT-22 | Unicode / 空格 / 长路径安全 | 集成测试 | 路径不影响解码 | `MediaDecodeTests.Decoding_a_unicode_path_with_a_space_succeeds`：`…\测试 folder\0 拷贝.mp3` 解码成功；**长路径/更多字符集未测** | `MediaDecodeTests` | 开发主机 | **PARTIAL** |
-| FT-23 | 不回归既有实时字幕功能 | 回归：既有单元/集成/性能测试 | 全通过 | **单元 159 / 集成 33 / 性能 3(+1 跳过)** 全通过，构建 0 错误；既有实时字幕套件未受影响 | 测试输出 | 开发主机 | **PASS** |
+| FT-23 | 不回归既有实时字幕功能 | 回归：既有单元/集成/性能测试 | 全通过 | **单元 190 / 集成 41 / 性能 3(+1 跳过)** 全通过，构建 0 错误；既有实时字幕套件未受影响（Phase 2 新增 31 单测 + 8 集成） | 测试输出 | 开发主机 | **PASS** |
 | FT-24 | 目标硬件（Windows 11 + Core Ultra 7 155H）上的文件转写验收 | 目标机运行 | 达标 | 未执行（无该机器） | — | 目标硬件 (Win11) | **BLOCKED** |
 | FT-25 | 发布产物/安装包包含 FFmpeg | 解压/安装后运行 | 随包提供 FFmpeg | 未执行：**V0.4.0 安装包存在但不含 FFmpeg**；Phase 8 打包未开始（`fetch-ffmpeg.ps1` 仅供开发/构建期） | `installer/` + `tools/fetch-ffmpeg.ps1` | — | **NOT_TESTED** |
 
 ### FT summary
 
-- **Phase 0–1（已实现）**：FT-01/02/03/04 在**解码层** **PASS**；FT-05/06/08 为 **PARTIAL**（离线 ASR 在解码音频上可用、
-  PcmBlock 全局时间戳存在，但**句子/分段级流水线未构建**）；FT-22 **PARTIAL**、FT-23 **PASS**（无回归）。
-- **Phase 2–6（未开始）**：FT-07/09/10/11/12/13/14/15/16/17/18/19 为 **NOT_TESTED**；其中 FT-12/13/15/18/19 标注了
+- **Phase 0–2（已实现）**：FT-01/02/03/04 在**解码层** **PASS**；**Phase 2 把 FT-05/06/08 由 PARTIAL 升为
+  PASS (dev host)**（分段长音频离线 ASR：VAD → 逐段解码 → 句级全局时间戳；三模式目录）；FT-07 **PARTIAL**
+  （56 s/65 s 已验证，**≥1 h 未测**）；FT-22 **PARTIAL**、FT-23 **PASS**（无回归，单元 190 / 集成 41）。
+- **Phase 3–6（未开始）**：FT-09/10/11/12/13/14/15/16/17/18/19 为 **NOT_TESTED**；其中 FT-12/13/15/18/19 标注了
   **可重用的 V0.4 等价能力**（分离/对齐/发言人管理/导出格式），但**对文件任务均未接线**。
-- FT-20 **PARTIAL**（解码路径离线，任务流未构建）；FT-21 **NOT_TESTED**。
+- FT-20 **PARTIAL**（解码/转写路径离线，任务流未构建）；FT-21 **NOT_TESTED**。
 - **FT-24/25**：目标硬件（Win11）**BLOCKED**、安装包内含 FFmpeg **NOT_TESTED**。
-- 因此 **V0.5 远未完成**：仅 Phase 0–1 可用，**不得宣称文件转写功能已达成**。
+- **Phase 2 全部结果均为开发主机（dev host）**：目标机 **BLOCKED/NOT_TESTED**；≥1 h 素材与 CER/WER **未测**；
+  高精度模式的 **SenseVoice 不支持模型级热词**（已核实）。
+- 因此 **V0.5 仍未完成**：Phase 0–2 可用，**不得宣称完整文件转写功能已达成**。

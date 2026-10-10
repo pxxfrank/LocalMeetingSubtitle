@@ -13,7 +13,10 @@ public static class AsrOptionsFactory
         string modelsRoot,
         string? hotwordsFile = null,
         int numThreads = 0,
-        float hotwordsScore = 1.5f)
+        float hotwordsScore = 1.5f,
+        string? decodingMethod = null,
+        string? language = null,
+        bool? useInverseTextNormalization = null)
     {
         return new AsrEngineOptions
         {
@@ -27,7 +30,10 @@ public static class AsrOptionsFactory
             NumThreads = AsrThreadPolicy.Resolve(numThreads),
             Provider = "cpu",
             HotwordsFile = hotwordsFile,
-            HotwordsScore = hotwordsScore
+            HotwordsScore = hotwordsScore,
+            DecodingMethod = decodingMethod ?? "greedy_search",
+            Language = language ?? "auto",
+            UseInverseTextNormalization = useInverseTextNormalization ?? true
         };
     }
 }

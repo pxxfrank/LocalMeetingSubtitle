@@ -41,6 +41,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OfflineVerification", "tool
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LocalMeetingSubtitle.ModelDownloads", "src\LocalMeetingSubtitle.ModelDownloads\LocalMeetingSubtitle.ModelDownloads.csproj", "{A4B0C4A0-1970-4470-B94B-DD15A8C3E776}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FileTranscribe", "tools\FileTranscribe\FileTranscribe.csproj", "{ABD56618-CFF7-4853-BFD0-5AC5861F03C7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -114,6 +116,10 @@ Global
 		{A4B0C4A0-1970-4470-B94B-DD15A8C3E776}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A4B0C4A0-1970-4470-B94B-DD15A8C3E776}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A4B0C4A0-1970-4470-B94B-DD15A8C3E776}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ABD56618-CFF7-4853-BFD0-5AC5861F03C7}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{ABD56618-CFF7-4853-BFD0-5AC5861F03C7}.Debug|Any CPU.Build.0 = Debug|x64
+		{ABD56618-CFF7-4853-BFD0-5AC5861F03C7}.Release|Any CPU.ActiveCfg = Release|x64
+		{ABD56618-CFF7-4853-BFD0-5AC5861F03C7}.Release|Any CPU.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{41743D2E-6709-43F5-8E1A-80B65CE0DF1B} = {805200AD-6356-4994-8C83-2C0DE1B1C3DD}
@@ -132,5 +138,6 @@ Global
 		{D067532A-39B8-4D3A-89C3-E26C6B5C09DC} = {A4BCD9D1-C563-49D9-A9B1-347882745848}
 		{14961D8A-0B33-4B34-8456-4DB6BBFBC357} = {A4BCD9D1-C563-49D9-A9B1-347882745848}
 		{A4B0C4A0-1970-4470-B94B-DD15A8C3E776} = {805200AD-6356-4994-8C83-2C0DE1B1C3DD}
+		{ABD56618-CFF7-4853-BFD0-5AC5861F03C7} = {A4BCD9D1-C563-49D9-A9B1-347882745848}
 	EndGlobalSection
 EndGlobal

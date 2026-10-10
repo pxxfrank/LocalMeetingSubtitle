@@ -100,13 +100,17 @@ public static class AsrModelCatalog
             License = "Apache-2.0 (FunAudioLLM/SenseVoice; sherpa-onnx conversion)",
             SourceUrl = $"{Hf}/{repo}",
             DirectoryName = dir,
-            SupportsHotwords = true,
+            // Verified against sherpa-onnx 1.13.8: the sense_voice recognizer implements only
+            // greedy_search and therefore cannot apply model-level hotword boosting.
+            SupportsHotwords = false,
             SupportsEnglish = true,
             SupportsChinese = true,
             ApproxSizeBytes = 250_000_000,
             ModelFile = "model.int8.onnx",
             TokensFile = "tokens.txt",
-            Notes = "Non-streaming; requires external segmentation (see AudioSegmenter). Higher accuracy, higher latency.",
+            Notes = "Non-streaming; requires external segmentation (see AudioSegmenter). Higher accuracy "
+                + "(punctuated output, ITN) at a similar RTF to the 14M streaming model. No model-level "
+                + "hotwords; domain terms go through TextCorrectionEngine instead.",
             Files = new[]
             {
                 new ModelFileSpec("model.int8.onnx", true, SourceUrl: Url("model.int8.onnx")),

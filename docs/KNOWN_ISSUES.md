@@ -3,8 +3,9 @@
 This file lists defects found and fixed during development, open (non-blocking) limitations, and
 items that could not be verified on the available hardware.
 
-**There are no open P0 defects.** Everything below is either already fixed, or a P3 (minor /
-documentation-level) limitation, or an item blocked purely by the absence of the target hardware.
+**There are no open P0 defects.** Everything below is either already fixed, or a minor /
+documentation-level limitation (mostly P3), or an item blocked purely by the absence of the target
+hardware. **V0.5 Phase 2 added four fixed defects (two P1, two P2) and one P2 that is still OPEN.**
 
 ## Summary
 
@@ -20,6 +21,11 @@ documentation-level) limitation, or an item blocked purely by the absence of the
 | P2 | Dark theme: stock Aero2 ComboBox/TextBox templates paint a hardcoded white background and ignore `Background`/`SystemColors`, making the text invisible | Medium (UI) | **FIXED** (explicit themed templates) |
 | P0 | The built-in lexicon made hotwords always active, and the hotwords file was written to a **Chinese** temp path (`%TEMP%\字幕君\`) that sherpa-onnx cannot read → the recognizer never became ready and **no subtitles appeared at all** | Critical (silent, total failure of the core flow) | **FIXED** — ASCII temp path + an explicit non-ASCII-path guard in the engine |
 | P1 | Release packaging: the repository `models/` folder was **flattened** into the publish (the ASR model files landed directly under `models\` instead of `models\<model>\`), so the shipped app reported `installed=False` and **Start was disabled** | High (release-breaking) | **FIXED** — pre-create `models\` and copy each model **directory** to its own sub-path; procedure documented |
+| P1 | sherpa-onnx offline `OfflineSession.IsReady()` always returned `true`, so any `while (IsReady()) Decode();` loop **spun/hung forever** (found via `AsrBenchmark --offline`) | High (offline ASR) | **FIXED** — `IsReady()` is true only while audio is accepted-but-undecoded; `Decode()`/`Reset()` clear it |
+| P1 | The offline ASR path had never been exercised with a real offline model: the tool fed **100 ms chunks** to a whole-utterance model (garbage), and `BuildOffline` passed a hotwords file that made the recognizer fail to build | High (correctness) | **FIXED** — whole-utterance feed; `BuildOffline` no longer passes hotwords (also fixes the `AsrBenchmark --offline` path) |
+| P2 | SenseVoice over-claimed model-level hotwords (`AsrModelCatalog.SenseVoiceSmall.SupportsHotwords` and offline `SherpaOnnxAsrEngine.ModelLevelHotwords`) | Medium (correctness) | **FIXED** — both now `false`, with the verified native error messages as evidence |
+| P2 | `TranscriptionPipeline.SwapEngine` rebuilt the `AudioSegmenter` with **defaults**, silently dropping the configured `OfflineSilenceRms`/`OfflineMaxSegmentSeconds` on every engine swap | Medium (latent) | **FIXED** — rebuild from the configured values |
+| P2 | The **live offline path** still emits zero-duration segments (`StartOffset == EndOffset == chunk-end`) | Medium | **OPEN** — unchanged by Phase 2 (Phase 2 targets file transcription) |
 | P3-1 | Subtitle selection is row-level, not character-level | Low | Open |
 | P3-2 | `AppSettings.EnableVadSegmenting` persisted but not wired | Low | Open |
 | P3-3 | `AsrNumThreads` applies at next Start / engine swap, not live | Low | Open |
@@ -146,6 +152,49 @@ documentation-level) limitation, or an item blocked purely by the absence of the
   UI-driven run persisted real subtitles (see BLOCKED-1).
 - **Lesson:** always launch the *packaged* app once before shipping — a compile + unit test cannot catch
   a broken model layout.
+
+### P1 — sherpa-onnx offline `OfflineSession.IsReady()` always returned `true` *(FIXED)*
+
+- **Symptom:** with a real offline model, any `while (IsReady()) Decode();` loop **spun/hung forever**.
+  Found because `tools/AsrBenchmark --offline` hung.
+- **Root cause:** the sherpa-onnx offline session's `IsReady()` was implemented to return `true`
+  unconditionally once audio had been accepted, so the decode loop never terminated.
+- **Fix:** `OfflineSession.IsReady()` now returns `true` **only while audio is accepted but not yet
+  decoded**, and both `Decode()` and `Reset()` clear it.
+- **Why the live pipeline was unaffected:** it called `Decode()` **exactly once** and never looped on
+  `IsReady()`, so the bug stayed latent there.
+
+### P1 — the offline ASR path had never been exercised with a real offline model *(FIXED)*
+
+- **Symptom / root cause:** offline ASR (SenseVoice) had only ever been *declared*, never run. Running
+  it exposed two real bugs:
+  1. `tools/AsrBenchmark` fed the offline model **100 ms chunks**, so it decoded fragments in isolation
+     (garbage output) instead of the whole utterance.
+  2. `SherpaOnnxAsrEngine.BuildOffline` passed a **hotwords file** that makes the recognizer **fail to
+     construct**.
+- **Fix:** the offline benchmark path now accepts the **whole utterance in one `AcceptWaveform` +
+  decode**; `BuildOffline` no longer sets `HotwordsFile` and hardcodes `greedy_search`.
+- **Note:** the **`AsrBenchmark` offline path was fixed** as part of this.
+
+### P2 — SenseVoice over-claimed model-level hotwords *(FIXED)*
+
+- **Symptom:** `AsrModelCatalog.SenseVoiceSmall.SupportsHotwords` and the offline
+  `SherpaOnnxAsrEngine` capability `ModelLevelHotwords` claimed hotword support for SenseVoice.
+- **Proof (VERIFIED, `tools/AsrBenchmark --offline --model-id sense-voice-small-int8`):**
+  - with `--hotwords` + default decoding the native layer refuses to build:
+    `offline-recognizer.cc:Validate:88 Please use --decoding-method=modified_beam_search if you provide --hotwords-file. Given --decoding-method='greedy_search'`;
+  - with `--decoding modified_beam_search` it **also** refuses:
+    `offline-recognizer-sense-voice-impl.h:82 Only greedy_search is supported at present. Given modified_beam_search`.
+- **Fix:** both flags are now **false**. Domain terms for the High-accuracy mode must go through
+  `TextCorrectionEngine` (correction rules), not model-level hotwords.
+
+### P2 — `TranscriptionPipeline.SwapEngine` rebuilt the `AudioSegmenter` with defaults *(FIXED)*
+
+- **Symptom:** on every engine swap (the hotword re-apply path), the `AudioSegmenter` was rebuilt with
+  **default** `OfflineSilenceRms` / `OfflineMaxSegmentSeconds`, silently discarding the configured
+  values.
+- **Fix:** `SwapEngine` now rebuilds the `AudioSegmenter` from the configured
+  `OfflineSilenceRms` / `OfflineMaxSegmentSeconds`.
 
 ## Open limitations (P3 — minor)
 
@@ -303,6 +352,18 @@ implemented**; the following are known and accepted for this state.
   transcription (**CER / WER**) is **not measured** — only that decoded media produces plausible
   Chinese text. No accuracy claim is made.
 - **Workaround:** none; accuracy measurement needs a reference transcript, which is not available.
+
+## Open defect (P2 — still open)
+
+### P2 — the live offline path still emits zero-duration segments *(OPEN)*
+
+- **Symptom:** on the **live** offline path a persisted segment can have
+  `StartOffsetMs == EndOffsetMs == (chunk end)` — i.e. a zero-length span.
+- **Status:** **unchanged by Phase 2** (Phase 2 targets file transcription), so this is still **OPEN**.
+  The file-transcription path (`OfflineTranscriptionEngine`) does **not** have this problem — it reports
+  the speech onset and clamps a carried-over start to the previous segment's end, so its timeline never
+  overlaps or collapses.
+- **Workaround:** none; file transcription is unaffected.
 
 ## Blocked / NOT_TESTED items
 

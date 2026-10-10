@@ -62,6 +62,7 @@ tools/
   AudioCaptureProbe                   list / capture WASAPI loopback
   AsrBenchmark                        decode a WAV, report timing / RTF / memory
   OfflineVerification                 5 offline-capability checks
+  FileTranscribe                      transcribe a local audio/video file (three modes)
 ```
 
 Runtime data lives under `%LOCALAPPDATA%\SubtitleJun\` (`subtitles.db`, `logs\`, `models\`,
@@ -204,10 +205,59 @@ dotnet test tests/LocalMeetingSubtitle.IntegrationTests/LocalMeetingSubtitle.Int
 # First end-to-end link: media -> FFmpeg PCM -> sherpa-onnx -> Chinese text
 dotnet test tests/LocalMeetingSubtitle.IntegrationTests/LocalMeetingSubtitle.IntegrationTests.csproj `
     -c Debug --filter "FullyQualifiedName~MediaToAsrEndToEndTests"
+
+# Phase 2: segmented long-audio offline ASR (VAD -> per-segment decode -> timestamps; three modes)
+dotnet test tests/LocalMeetingSubtitle.IntegrationTests/LocalMeetingSubtitle.IntegrationTests.csproj `
+    -c Debug --filter "FullyQualifiedName~FileTranscriptionTests"
 ```
 
 Both suites **skip** (they never fake a result) when `testmedia/`, the bundled FFmpeg, or the ASR
 model are absent, so a clean clone stays green.
+
+### 6.4 Transcribe a file offline (`tools/FileTranscribe`)
+
+`tools/FileTranscribe` is a CLI that streams `IMediaDecodeService.DecodeAsync` straight into
+`OfflineTranscriptionEngine` (it never buffers the file) and prints one line per segment followed by
+`SEGMENTS` / `AUDIO_SECONDS` / `ELAPSED_SECONDS` / `RTF` (or JSON with `--json`).
+
+```powershell
+# The three modes (Fast / Standard / High-accuracy)
+dotnet run --project tools/FileTranscribe -- --file testmedia/0.mp4 --mode fast
+dotnet run --project tools/FileTranscribe -- --file testmedia/0.mp4 --mode standard
+dotnet run --project tools/FileTranscribe -- --file testmedia/0.mp4 --mode high
+
+# With options
+dotnet run --project tools/FileTranscribe -- --file <path> --mode high --models-root models --track 0 --json
+```
+
+Flags: `--file <path>` (required), `--mode fast|standard|high`, `--models-root <path>`,
+`--track N` (audio-stream ordinal), `--hotwords <file>`, `--lexicon`, `--json`.
+
+Output line format: `[hh:mm:ss.fff - hh:mm:ss.fff] (#chunk modelId) text`.
+
+> The **High-accuracy** mode needs the offline `sense-voice-small-int8` model installed — it is **not**
+> bundled by default. Install it with
+> `dotnet run --project tools/ModelManager -- install --id sense-voice-small-int8`. The other two modes
+> use the bundled streaming `streaming-zipformer-zh-14M`. Per the verified constraint, the High-accuracy
+> mode does **not** use model-level hotwords (see [`MODEL_SELECTION.md`](MODEL_SELECTION.md)).
+
+### 6.5 Long test fixtures (`tools/make-long-testmedia.ps1`)
+
+`tools/make-long-testmedia.ps1` builds two longer fixtures from the bundled model's `test_wavs/0.wav`
+using the fetched FFmpeg:
+
+- `testmedia/long-continuous.wav` — **~56 s of unbroken speech** (the clip joined back-to-back);
+- `testmedia/long-gaps.wav` — **~65 s** of the same clip separated by **1-second silences**.
+
+```powershell
+./tools/make-long-testmedia.ps1
+dotnet run --project tools/FileTranscribe -- --file testmedia/long-continuous.wav --mode high
+dotnet run --project tools/FileTranscribe -- --file testmedia/long-gaps.wav --mode high
+```
+
+`testmedia/` is **gitignored** (as is `third_party/`), so these fixtures are **never committed** —
+regenerate them locally before running long-audio work. They are the fixtures behind the Phase 2
+evidence in [`FILE_TRANSCRIPTION_TEST_REPORT.md`](FILE_TRANSCRIPTION_TEST_REPORT.md) (§4.5).
 
 ## 7. Conventions
 

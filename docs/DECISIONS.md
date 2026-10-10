@@ -116,3 +116,49 @@ consequence/trade-off.
 - **Consequence:** model selection is limited to permissively licensed models; the concrete model
   choice remains **tentative** until benchmarked on the target hardware (see
   [`MODEL_SELECTION.md`](MODEL_SELECTION.md)).
+
+## D11 — Data-driven transcription-mode catalog that fails soft
+
+- **Decision:** model the three file-transcription modes as a **data-driven catalog**
+  (`Asr/TranscriptionModeCatalog.Resolve(mode, …)`) that returns a `ResolvedTranscriptionMode` carrying
+  `IsAvailable` / `UnavailableReason`, rather than a `switch` that throws when a mode cannot run.
+- **Context:** the three modes (Fast / Standard / HighAccuracy) differ in model **and** decoding **and**
+  segmentation, and the High-accuracy mode depends on a large (≈239 MB) model that may not be installed.
+- **Rationale:** a caller (CLI or UI) needs to **list** and **describe** all modes, know whether each is
+  runnable, and degrade gracefully — a missing model must not crash the app or hide the mode. Returning
+  availability plus a human-readable reason keeps the policy in one place and testable
+  (`TranscriptionModeCatalogTests`).
+- **Consequence:** the modes are declarative data, not branches; an unavailable mode is presented as
+  such **with a reason** instead of throwing, and the caller decides what to do (fall back, or prompt to
+  install the model).
+
+## D12 — Overlap text de-duplication rule
+
+- **Decision:** when consecutive offline segments overlap in audio (High-accuracy mode uses a **1.5 s**
+  overlap), remove the repeated text with `OverlapTextDeduplicator.Apply(previousText, currentText,
+  minOverlapChars)`: **fold both texts** (strip whitespace/punctuation/symbols, lowercase — reusing
+  `SubtitleAccumulator.Fold`), find the **longest suffix-of-previous == prefix-of-current** run, and
+  trim it from the **later** text when it reaches **`minOverlapChars` (default 3)** folded chars. If the
+  whole current text repeats the previous, **drop** it.
+- **Context:** an audio overlap makes the second region re-hear the tail of the first, so the ASR
+  repeats it; the timeline must stay non-overlapping but the text must not be duplicated.
+- **Rationale:** only the **later** text is ever modified, so earlier segments stay stable; trimming only
+  a shared run (not arbitrary characters) avoids deleting legitimate repeats; the **≥ 3 folded chars**
+  threshold avoids trimming a trivial one- or two-character coincidence. Crucially, the rule **can never
+  empty a segment** — a full repetition becomes `Dropped`, not an empty line.
+- **Consequence:** overlap de-dup is deterministic and testable (`OverlapTextDeduplicatorTests`); the
+  `Dropped` outcome is reported rather than silently producing an empty segment.
+
+## D13 — SQLite migration 5 deferred to Phase 4
+
+- **Decision:** do **not** add a schema migration in Phase 2. Keep the database at **migration 4** and
+  defer the V0.5 job/queue/checkpoint tables (`MediaFile` / `TranscriptionJob` / `TranscriptionChunk` /
+  `JobCheckpoint`) to **Phase 4**.
+- **Context:** Phase 2's `OfflineTranscriptionEngine` returns results **in memory**; there is no job
+  queue, no per-chunk checkpoint, and no resume yet (that is Phase 4).
+- **Rationale:** adding tables before their owning feature exists would freeze a schema that would then
+  churn; migration 4 already stores what a transcript *is*. A file transcript can be persisted today
+  with **no schema change** — one `MeetingSession` plus one `segments` row per result (existing
+  `SqliteSubtitleRepository`, `StartOffsetMs` / `EndOffsetMs`).
+- **Consequence:** Phase 2 requires **no migration**; the schema stays at migration 4, and the
+  job/orchestration schema is designed and added together with the Phase 4 job service.

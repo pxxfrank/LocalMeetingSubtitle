@@ -71,10 +71,41 @@ recording.
 - **Not measured:** decode/ASR throughput or memory on **long** (minutes-to-hours) files; the
   streaming design means the whole file is never buffered, but that was **not** benchmarked.
 
-## 5. Methodology
+## 5. Phase 2 — long-audio offline file transcription (RTF)
+
+Measured with the new **`tools/FileTranscribe`** CLI on the **development host** (Xeon, 64 logical
+CPUs). `RTF = inference-seconds / audio-seconds`, printed by the tool.
+
+> **Caveat:** on the 5.6 s clip the RTF is **dominated by model load**, not by inference (each run
+> loads the model once), so 0.09–0.10 is *not* the marginal cost of decoding audio. It drops to
+> ~0.05 on the longer fixtures, consistent with that amortisation.
+
+### 5.1 5.612 s clip (`testmedia/0.mp4`) — one segment per mode
+
+| Mode | Model | RTF |
+| --- | --- | --- |
+| Fast | `streaming-zipformer-zh-14M` | 0.0920 |
+| Standard | `streaming-zipformer-zh-14M` (`modified_beam_search`) | 0.0974 |
+| High | `sense-voice-small-int8` (offline) | 0.1024 |
+
+### 5.2 Long fixtures (High-accuracy mode)
+
+| Fixture | Audio | Segments | RTF |
+| --- | --- | --- | --- |
+| `testmedia/long-gaps.wav` | 65.115 s | 10 | 0.0508 |
+| `testmedia/long-continuous.wav` | 56.115 s | 2 (30 s cap + 1.5 s overlap) | 0.0587 |
+
+- **Measured:** the five RTF values above and the segment counts.
+- **Not measured:** throughput / memory on a **multi-hour** file (no such fixture exists — the longest
+  is 65 s), and the **target-hardware** RTF (the laptop is not available).
+
+## 6. Methodology
 
 - **RTF** = inference-seconds / audio-seconds; produced by `tools/AsrBenchmark` (it prints
   `RTF=<inference>/<audio>`). Thread counts were passed with `--threads <N>`.
+- **File transcription (Phase 2):** `tools/FileTranscribe --file <path> --mode fast|standard|high`
+  streams the FFmpeg decode straight into `OfflineTranscriptionEngine` and prints one line per segment
+  plus `SEGMENTS` / `AUDIO_SECONDS` / `ELAPSED_SECONDS` / `RTF`.
 - **File decode / first link**: `tests/LocalMeetingSubtitle.IntegrationTests` —
   `MediaDecodeTests` (probe + decode of real media) and `MediaToAsrEndToEndTests`
   (real media → FFmpeg PCM → sherpa-onnx → Chinese text).
@@ -82,23 +113,24 @@ recording.
   pyannote + 3D-Speaker models.
 - All runs were on the development host; **no number was extrapolated to the target**.
 
-## 6. Targets vs. measured
+## 7. Targets vs. measured
 
 Targets come from the product spec. "Measured" records only what was actually run.
 
 | Metric | Target | Measured (dev host) | Target hardware |
 | --- | --- | --- | --- |
 | ASR RTF (live / offline decode) | ≤ 0.5 | **0.0396** (4-thread default) / 0.0481 (4 threads) | `NOT_TESTED` |
-| Long-audio file transcription RTF | — | not measured | `NOT_TESTED` |
+| Long-audio file transcription RTF | — | **0.0508** (65 s) / **0.0587** (56 s) / 0.0920–0.1024 (5.6 s, load-dominated) — High/Fast/Standard, dev host | `NOT_TESTED` |
 | Diarization wall time | — | not recorded (correct output only) | `NOT_TESTED` |
 | CPU | ≤ 25 % | `NOT_TESTED` | `NOT_TESTED` |
 | Working set | ≤ 1 GB | not measured for file jobs | `NOT_TESTED` |
 | 3-hour soak | ≥ 3 h | `NOT_TESTED` (`ThreeHourSoak` never executed) | `NOT_TESTED` / **BLOCKED** |
 
-## 7. Explicit statement
+## 8. Explicit statement
 
 **No figure in this report was measured on the target hardware, and none was extrapolated to it.**
 The dev-host RTF comfortably beats the ≤ 0.5 target, but the target laptop's CPU is substantially
 slower and this project makes **no claim** that the target targets are met. Target-hardware CPU,
 memory, latency, long-audio throughput, and the 3-hour soak are all `NOT_TESTED` (the soak and the
-live+file concurrency additionally `BLOCKED`).
+live+file concurrency additionally `BLOCKED`). The Phase 2 file-transcription RTFs (§5) are
+dev-host values on 5.6 s / 56 s / 65 s fixtures — **not** a multi-hour throughput claim.

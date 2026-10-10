@@ -3,13 +3,14 @@
 ## Current phase
 
 **V0.4.0 released (HEAD `554c8eb`); V0.5 "offline file transcription + role-tagged dialogue" is in
-progress — Phases 0–1 complete, Phase 2 not started.**
+progress — Phases 0–2 complete, Phase 3 not started.**
 
 The V0.4 live-subtitle product builds, its tests pass on the development host, a real model decodes
 Chinese, offline guarantees are verified, and a self-contained release artifact is produced. V0.5 adds
-a bundled **LGPL FFmpeg** media-decode layer (import audio/video → 16 kHz mono PCM). The remaining V0.5
-work (segmented offline ASR, role-tagged dialogue, job queue, editor UI, export, packaging) is **not
-started**, and the remaining work overall is **acceptance on the real Windows 11 target hardware**.
+a bundled **LGPL FFmpeg** media-decode layer (import audio/video → 16 kHz mono PCM) and **segmented
+long-audio offline ASR** (VAD → per-segment decode → global timestamps, with a three-mode catalog). The
+remaining V0.5 work (role-tagged dialogue, job queue, editor UI, export, packaging) is **not started**,
+and the remaining work overall is **acceptance on the real Windows 11 target hardware**.
 
 Status banner: **候选发布版本 — 待实机验收；V0.5（离线文件转写）进行中 / Release candidate (V0.4.0) — pending hardware acceptance; V0.5 (offline file transcription) in progress.**
 
@@ -719,3 +720,141 @@ Phase 6 TXT/Markdown/CSV/SRT/**DOCX** 导出；Phase 7 UX/性能；Phase 8 回�
 - **下一验收目标：** `RELEASE_CHECKLIST` 的 **FT-05..FT-08**（离线 ASR 文本/分段、全局时间戳、长音频 VAD 分段）。
 - **诚实边界：** 全部目标机（Win11 + Core Ultra 7 155H）验收仍 **BLOCKED/NOT_TESTED**；长音频 **CER/WER**
   因**无参考文本**未测。
+
+## Update — V0.5 Phase 2（长音频离线 ASR，long-audio offline ASR）— DONE (2026-10-10)
+
+**目标：** 在 Phase 0–1 的媒体解码层之上完成**长音频离线转写**：解码得到的 16 kHz 单声道 PCM →
+VAD/能量分段 → 逐段 sherpa-onnx 离线解码 → 产出**带全局时间戳的句子**。**Phase 2 完成；Phase 3 及以后未开始。**
+**实时字幕路径未改动**（无回归）。
+
+### 新增 / 修改的代码（全部增量）
+- **新增** `src/LocalMeetingSubtitle.Core/Audio/SpeechSegment.cs` —
+  `readonly record struct SpeechSegment(float[] Samples, long StartSample, long EndSample, bool HasOverlapPrefix)`（含 `Length`）。
+- **修改** `src/LocalMeetingSubtitle.Core/Audio/AudioSegmenter.cs` — 增加**绝对采样位置**记账；新增可选**末位**构造参数
+  `double overlapSeconds = 0.0`（上限 `maxSegmentSamples/2`）；新增 `PushSegments` / `FlushSegment`（返回 `SpeechSegment`），
+  `Push` / `Flush` 在其上重实现（**输出不变**）。**仅**在因达到最大长度而切割时，把尾部 `overlap` 采样保留进下一个缓冲区，
+  并把该区域标记 `HasOverlapPrefix`（仅此情况）。
+- **新增** `src/LocalMeetingSubtitle.Core/Models/OfflineTranscriptionModels.cs` —
+  `enum TranscriptionMode { Fast, Standard, HighAccuracy }`；`sealed record OfflineTranscriptionOptions`（SampleRate、
+  SilenceRms=0.010、MinSilenceSeconds=0.6、MaxSegmentSeconds=15.0、OverlapSeconds=0、MinSpeechSeconds=0.35、
+  MinOverlapChars=3、ModelId、AppendTerminalPunctuation、TerminalPunctuation="。"）；
+  `readonly record struct OfflineTranscriptSegment(TimeSpan Start, TimeSpan End, string Text, int SourceChunkId, string ModelId)`；
+  `OfflineTranscriptionResult`（Segments / AudioDuration / Elapsed / Rtf / Completed / Cancelled / Error）；
+  `readonly record struct OfflineTranscriptionProgress(TimeSpan Processed, TimeSpan Total, int SegmentsEmitted)`。
+- **新增** `src/LocalMeetingSubtitle.Core/Transcription/OverlapTextDeduplicator.cs` —
+  `Apply(previousText, currentText, minOverlapChars) -> Result(Text, TrimmedChars, Dropped)`。
+- **新增** `src/LocalMeetingSubtitle.Core/Transcription/OfflineTranscriptionEngine.cs` —
+  `TranscribeAsync(IAsyncEnumerable<PcmBlock> blocks, IProgress<OfflineTranscriptionProgress>?, TimeSpan? totalDuration, CancellationToken)`
+  → `OfflineTranscriptionResult`：**流式**处理块（**整文件从不缓冲**），跑 VAD，用**一个** `IAsrSession` 逐段解码
+  （`Reset()` → `AcceptWaveform` → `InputFinished` → `while (IsReady()) Decode()` → `GetResult()`），应用可选纠正函数，
+  **裁掉前导静音**（上报起点即语音起始），把**接续段的起点钳到前一段终点**（时间轴永不重叠），为不产标点的模型**追加句末标点**，
+  流结束时**冲刷最后一段**。捕获 `OperationCanceledException` / `MediaDecodeException(Cancelled)` → `Cancelled=true`。
+  绝对时间 = 第一个 `PcmBlock.Start` + 累计采样索引。
+- **修改** `src/LocalMeetingSubtitle.Asr/AsrOptionsFactory.cs` — `FromDescriptor` 增加可选 `decodingMethod`、`language`、
+  `useInverseTextNormalization`。
+- **新增** `src/LocalMeetingSubtitle.Asr/TranscriptionModeCatalog.cs` —
+  `Resolve(mode, IModelManager, hotwordsFile, numThreads)` → `ResolvedTranscriptionMode(Mode, DisplayName, Description,
+  Descriptor, EngineOptions, TranscriptionOptions, IsAvailable, UnavailableReason)`。
+- **修改** `src/LocalMeetingSubtitle.Asr/AsrModelCatalog.cs` — `SenseVoiceSmall.SupportsHotwords` 由 true 改为 **false**；说明同步更新。
+- **修改** `src/LocalMeetingSubtitle.Asr/SherpaOnnxAsrEngine.cs` — 离线 `Capabilities.ModelLevelHotwords` 改为 **false**；
+  `BuildOffline` 不再设置 `HotwordsFile` 并硬编码 `greedy_search`（已核实约束）；修复 `OfflineSession.IsReady()` 恒为 `true` 的缺陷。
+- **修改** `src/LocalMeetingSubtitle.Core/Transcription/TranscriptionPipeline.cs` — `SwapEngine` 改用配置的
+  `OfflineSilenceRms` / `OfflineMaxSegmentSeconds` 重建 `AudioSegmenter`（此前恒用默认值）。
+- **新增工具** `tools/FileTranscribe/`（`FileTranscribe.csproj` + `Program.cs`，已加入解决方案）。
+- **新增工具** `tools/make-long-testmedia.ps1`。
+- **修改** `tools/AsrBenchmark/Program.cs` — 新增 `--decoding <method>`；离线路径改为**整段一次性** `AcceptWaveform` + 解码
+  （此前按 100 ms 分块喂入，使离线模型孤立地解码碎片）。
+
+### 三种模式（真实、互不相同的配置）
+| 模式 | 标签 | 模型 | 解码 | 模型级热词 | 分段 |
+| --- | --- | --- | --- | --- | --- |
+| Fast | 快速 | `streaming-zipformer-zh-14M` | `greedy_search` | 关 | VAD，最大 15 s，overlap 0，补 `。` |
+| Standard | 标准 | `streaming-zipformer-zh-14M` | `modified_beam_search` | 开（热词文件） | VAD，最大 20 s，overlap 0，补 `。` |
+| HighAccuracy | 高精度 | `sense-voice-small-int8`（离线） | `greedy_search`（唯一选项） | **不支持** | VAD，最大 30 s，**overlap 1.5 s** + 去重，ITN 标点 |
+
+### 实测证据（开发主机：Windows 10 Pro，Xeon 64 逻辑核，64 GB）
+> 目标硬件（X1 Carbon Gen 12 / Core Ultra 7 155H / 32 GB / Win11）**不可用** —— 以下**未**在目标机验证。
+> `sense-voice-small-int8` 已为验证下载（`model.int8.onnx` **239,233,841 B** + `tokens.txt`；目录
+> `models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17`）；**sha256 未记录**。
+
+`tools/FileTranscribe` 处理 `testmedia/0.mp4`（5.612 s 中文语音，FFmpeg 从视频容器解码）：
+
+| 模式 | 输出 | RTF |
+| --- | --- | --- |
+| Fast | `[00:00:00.000 - 00:00:05.380] (#1 streaming-zipformer-zh-14M) 对我做了介绍那么我想说的是大家如果对我的研究感兴趣呢。` | 0.0920 |
+| Standard | `[00:00:00.000 - 00:00:05.380] (#1 streaming-zipformer-zh-14M) 对我做了介绍那么我想说的是呢大家如果对我的研究感兴趣呢。` | 0.0974 |
+| High | `[00:00:00.000 - 00:00:05.380] (#1 sense-voice-small-int8) 对我做了介绍啊，那么我想说的是呢，大家如果对我的研究感兴趣呢。` | 0.1024 |
+
+标准模式输出与快速模式**不同** ⇒ 束搜索确实生效。
+
+`testmedia/long-gaps.wav`（65.115 s）高精度 → **10 段**，时间戳单调、互不重叠：
+`0.000-5.380`、`5.980-11.980`、`12.580-18.600`、`19.200-25.220`、`25.820-31.820`、`32.420-38.440`、
+`39.040-45.040`、`45.640-51.659`、`52.260-58.280`、`58.880-64.880`；RTF **0.0508**。
+
+`testmedia/long-continuous.wav`（56.115 s 不间断语音）高精度 → **2 段**：`[00:00:00.000 - 00:00:30.000]`
+与 `[00:00:28.500 - 00:00:55.880]` —— 即 30 s 上限触发，第二段确实从 **28.500 s = 30.000 − 1.500 s** 重启；
+重叠文本**未**被重复。RTF **0.0587**。
+
+**sherpa-onnx 1.13.8 离线热词结论（A/B，`tools/AsrBenchmark --offline --model-id sense-voice-small-int8`）：**
+- 带 `--hotwords` + 默认解码时，原生层拒绝构建识别器：
+  `offline-recognizer.cc:Validate:88 Please use --decoding-method=modified_beam_search if you provide --hotwords-file. Given --decoding-method='greedy_search'`。
+- 改用 `--decoding modified_beam_search` 仍拒绝：
+  `offline-recognizer-sense-voice-impl.h:82 Only greedy_search is supported at present. Given modified_beam_search`。
+- **结论：sherpa-onnx 1.13.8 中 SenseVoice 无法使用模型级热词。** 高精度模式的领域词只能走
+  `TextCorrectionEngine`（纠正规则）。这纠正了代码中的两处过度声明。
+
+### Phase 2 发现并修复的缺陷
+1. **P1 `OfflineSession.IsReady()` 恒为 `true`**（sherpa-onnx 离线会话）—— `while (IsReady()) Decode();` 会无限自旋/挂起。
+   因 `AsrBenchmark --offline` 挂起而发现。现在仅当「已接受音频但尚未解码」时为 true；`Decode()` 与 `Reset()` 会清除它。
+   实时管线此前只调用一次 `Decode()`，故未受影响。
+2. **P1 离线 ASR 从未用真实离线模型跑过。** 由此暴露并修复：工具把 100 ms 分块喂给「整段」模型（输出垃圾）、
+   `BuildOffline` 传入会让识别器构建失败的热词文件。
+3. **P2 SenseVoice 过度声明模型级热词**（`AsrModelCatalog.SenseVoiceSmall.SupportsHotwords` 与 `SherpaOnnxAsrEngine`
+   离线 `ModelLevelHotwords`）—— 两者现均为 false，证据即上面的原生报错信息。
+4. **P2 `TranscriptionPipeline.SwapEngine` 用默认值重建 `AudioSegmenter`**，每次引擎切换（热词重应用）都会静默丢弃
+   配置的 `OfflineSilenceRms` / `OfflineMaxSegmentSeconds`。已修复。
+5. **P2 实时离线路径仍产出零时长分段**（`StartOffset == EndOffset == 块结束`）—— Phase 2 未改动（Phase 2 面向文件转写）；
+   **仍为 OPEN**。
+
+### 持久化
+**Phase 2 未新增数据库迁移。** 引擎在内存中返回结果；文件转写结果可立即通过创建 **1 个 `MeetingSession`** 并逐条追加
+`segments` 行（既有 `SqliteSubtitleRepository`，`StartOffsetMs`/`EndOffsetMs`）持久化。V0.5 计划的 job/queue/checkpoint
+表（`MediaFile`/`TranscriptionJob`/`TranscriptionChunk`/`JobCheckpoint`）**推迟到 Phase 4**；数据库仍为**迁移 4**。
+
+### 测试
+- 单元 **159 → 190**（+31：新增 `OfflineSegmenterTimingTests`、`OverlapTextDeduplicatorTests`、
+  `OfflineTranscriptionEngineTests`、`TranscriptionModeCatalogTests`）。
+- 集成 **33 → 41**（+8，含 `FileTranscriptionTests`：4 例 theory + 4 例 fact）。
+- **无实时路径回归**；构建 0 错误。
+
+### 验证命令
+```powershell
+$env:PATH = "$env:USERPROFILE\.dotnet;$env:PATH"
+dotnet build LocalMeetingSubtitle.sln -c Release
+dotnet test tests/LocalMeetingSubtitle.UnitTests/LocalMeetingSubtitle.UnitTests.csproj -c Debug
+dotnet test tests/LocalMeetingSubtitle.IntegrationTests/LocalMeetingSubtitle.IntegrationTests.csproj -c Debug
+
+# 长音频测试素材（gitignore 的 testmedia/；由随包模型的 test_wavs/0.wav 生成）
+./tools/make-long-testmedia.ps1
+
+# 文件转写 CLI（三模式）
+dotnet run --project tools/FileTranscribe -- --file testmedia/0.mp4 --mode fast
+dotnet run --project tools/FileTranscribe -- --file testmedia/0.mp4 --mode standard
+dotnet run --project tools/FileTranscribe -- --file testmedia/0.mp4 --mode high
+dotnet run --project tools/FileTranscribe -- --file testmedia/long-continuous.wav --mode high
+dotnet run --project tools/FileTranscribe -- --file testmedia/long-gaps.wav --mode high
+```
+
+### 断点续跑信息（下一会话）
+- **当前阶段：** V0.5 Phase 2 完成；**Phase 3 未开始**。
+- **已完成：** Phase 0 FFmpeg 工具链；Phase 1 媒体解码层；Phase 2 长音频离线 ASR（VAD 分段 + 逐段离线解码 +
+  全局时间戳 + 三模式目录）。
+- **下一步（Phase 3）：** **角色标注对话（role-tagged dialogue via diarization）** —— 复用 V0.4
+  `ISpeakerDiarizationService` 对解码音频做说话人分离，再以新的 `ITranscriptAlignmentService` 把离线转写分段与
+  说话人区间对齐成对话轮次。
+- **下一步要改的文件：** 新增 `Core/Abstractions/` 下的 `ITranscriptAlignmentService`（对齐契约）、`Core/` 下的对齐服务
+  （区间重叠 → 每句最多一个发言人），并接线文件作业路径；测试在 `tests/LocalMeetingSubtitle.IntegrationTests/` 下新增。
+- **下一验收目标：** `RELEASE_CHECKLIST` 的 **FT-09..FT-14**（音轨选择、任务级错误处理、断点续跑、分角色标注/对齐）。
+- **诚实边界：** 全部目标机（Win11 + Core Ultra 7 155H）验收仍 **BLOCKED/NOT_TESTED**；
+  **长音频 CER/WER 因无参考文本未测**；仅 56 s / 65 s 素材，**无 >1 h 文件**；
+  SenseVoice 高精度模式**不支持模型级热词**（已核实）。

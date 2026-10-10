@@ -210,3 +210,27 @@ dotnet run --project tools/ModelManager -- install --id streaming-zipformer-zh-1
 8. **仍无输出**：查看 `%LOCALAPPDATA%\SubtitleJun\logs\` 下的日志，寻找 `ASR decode failed` / `audio capture failed` / `native library` 等关键字。
 
 > 若日志提示 **“未找到 sherpa-onnx 原生库 / native library missing”**，说明缺少 `sherpa-onnx-c-api.dll` / `onnxruntime.dll`（发布包应自带，请勿删除）。
+
+## 17. 文件转写模式（快速 / 标准 / 高精度）
+
+除实时字幕后，程序还支持把**已录好的音频/视频文件**离线转写成带时间戳的文字（V0.5 新增，仍在开发中）。文件转写提供**三种模式**，在速度、准确度与资源占用之间取舍：
+
+| 模式 | 所用模型 | 特点 | 热词 |
+| --- | --- | --- | --- |
+| **快速 / Fast** | `streaming-zipformer-zh-14M`（随包） | 最快；自动分段，单段最长 15 s；自动补句号「。」 | 不使用模型级热词 |
+| **标准 / Standard** | `streaming-zipformer-zh-14M`（随包） | 较快；`modified_beam_search`，单段最长 20 s | **使用**模型级热词（你的热词与内置词表生效） |
+| **高精度 / High accuracy** | `sense-voice-small-int8`（**离线模型**） | 准确度最高、自带标点；单段最长 30 s，段间重叠 1.5 s 并自动去重 | **不支持**模型级热词 |
+
+> **高精度模式需要单独安装 SenseVoice 模型（约 239 MB），默认不随包提供。** 安装方法（在源码目录、PowerShell）：
+>
+> ```powershell
+> $env:PATH = "$env:USERPROFILE\.dotnet;$env:PATH"
+> dotnet run --project tools/ModelManager -- install --id sense-voice-small-int8 `
+>     --models-root "$env:LOCALAPPDATA\SubtitleJun\models"
+> ```
+>
+> 未安装时该模式不可用（会给出原因），可改用「快速 / 标准」。
+
+> **关于高精度模式的热词：** 该模式使用的 SenseVoice 模型在 sherpa-onnx 1.13.8 中**不支持模型级热词**（已实测核实）。若你需要领域术语（人名、缩写等），请改用**标准**模式，或依赖**文本纠正规则**（内置词表附带的纠正规则对高精度结果同样适用）。
+
+> **诚实说明：** 文件转写目前**尚未接入图形界面**（主要通过命令行工具 `tools/FileTranscribe` 使用），且**未在目标笔记本上验收**；开发主机上仅用约 5.6 s、56 s、65 s 的素材做过验证，**没有测过 1 小时以上的长文件**，也**没有参考文本**，因此**未评估准确率（CER/WER）**。

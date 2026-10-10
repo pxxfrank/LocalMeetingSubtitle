@@ -66,7 +66,10 @@ public sealed class SherpaOnnxAsrEngine : IAsrEngine
                 Capabilities = new AsrCapabilities
                 {
                     Streaming = false,
-                    ModelLevelHotwords = options.HotwordsFile != null,
+                    // sherpa-onnx 1.13.8 supports only greedy_search for sense_voice, and its hotword
+                    // boosting requires modified_beam_search — so an offline model cannot use model-level
+                    // hotwords at all (verified: the native layer rejects both combinations).
+                    ModelLevelHotwords = false,
                     TokenTimestamps = true,
                     Chinese = true,
                     English = true,
@@ -179,13 +182,13 @@ public sealed class SherpaOnnxAsrEngine : IAsrEngine
         config.ModelConfig.NumThreads = AsrThreadPolicy.Resolve(o.NumThreads);
         config.ModelConfig.Provider = o.Provider;
         config.ModelConfig.ModelType = "sense_voice";
+        // Verified against sherpa-onnx 1.13.8: OfflineRecognizerSenseVoiceImpl accepts ONLY
+        // greedy_search ("Only greedy_search is supported at present"), so the configured decoding
+        // method is deliberately ignored here.
         config.DecodingMethod = "greedy_search";
 
-        if (!string.IsNullOrEmpty(o.HotwordsFile) && File.Exists(o.HotwordsFile))
-        {
-            config.HotwordsFile = o.HotwordsFile;
-            config.HotwordsScore = o.HotwordsScore;
-        }
+        // No HotwordsFile: sense_voice cannot use it (it needs modified_beam_search, which it does not
+        // support). Passing one makes the native constructor fail rather than degrade.
 
         return new OfflineRecognizer(config);
     }
@@ -279,6 +282,7 @@ public sealed class SherpaOnnxAsrEngine : IAsrEngine
         private readonly OfflineRecognizer _recognizer;
         private OfflineStream _stream;
         private bool _consumed;
+        private bool _hasPendingAudio;
 
         public OfflineSession(OfflineRecognizer recognizer)
         {
@@ -295,10 +299,17 @@ public sealed class SherpaOnnxAsrEngine : IAsrEngine
                 _consumed = false;
             }
             _stream.AcceptWaveform(sampleRate, samples.ToArray());
+            _hasPendingAudio = true;
         }
 
-        public bool IsReady() => true;
-        public void Decode() => _recognizer.Decode(_stream);
+        /// <summary>An offline recognizer is ready exactly once per accepted utterance.</summary>
+        public bool IsReady() => _hasPendingAudio;
+
+        public void Decode()
+        {
+            _recognizer.Decode(_stream);
+            _hasPendingAudio = false;
+        }
 
         public AsrDecodeResult GetResult()
         {
@@ -312,6 +323,7 @@ public sealed class SherpaOnnxAsrEngine : IAsrEngine
             _stream.Dispose();
             _stream = _recognizer.CreateStream();
             _consumed = false;
+            _hasPendingAudio = false;
         }
 
         public void InputFinished() { }

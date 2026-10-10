@@ -464,7 +464,8 @@ public sealed class TranscriptionPipeline : IAsyncDisposable
             var newSession = newEngine.CreateSession();
             var newSegmenter = newEngine.Capabilities.Streaming
                 ? null
-                : new AudioSegmenter(_preprocessor.TargetFormat.SampleRate);
+                : new AudioSegmenter(_preprocessor.TargetFormat.SampleRate, _options.OfflineSilenceRms,
+                    maxSegmentSeconds: _options.OfflineMaxSegmentSeconds);
 
             var oldSession = _asrSession;
             var oldEngine = _engine;

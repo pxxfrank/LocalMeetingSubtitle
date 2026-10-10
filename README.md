@@ -7,8 +7,9 @@
 > **候选发布 ≠ 已验收。** 本版本可交付评审与实机试用，但在目标笔记本上完成验收前，不应宣称已满足产品指标（延迟、CPU、内存、3 小时稳定性）。
 
 > **V0.5（离线文件转写 + 角色标注对话）进行中 / in progress：** 已加入「本地音频/视频导入 → 离线解码
-> （捆绑 **LGPL v3 FFmpeg**）→ 离线 ASR」的**解码层**（**Phase 0–1 完成**）；分段长音频转写、角色标注对话、
-> 作业队列/断点续跑、对话编辑界面、DOCX 等导出、安装包打包均**未开始**。详见
+> （捆绑 **LGPL v3 FFmpeg**）→ 分段长音频离线 ASR（**Phase 0–2 完成**）：VAD 分段 → 逐段离线解码 →
+> 句级全局时间戳，并提供**快速 / 标准 / 高精度**三种转写模式；角色标注对话、作业队列/断点续跑、
+> 对话编辑界面、DOCX 等导出、安装包打包均**未开始**。详见
 > [`docs/ARCHITECTURE_V05.md`](docs/ARCHITECTURE_V05.md) 与 [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)（FT-01..FT-25）。
 
 ---
@@ -21,6 +22,7 @@
 - 使用 **sherpa-onnx**（流式 zipformer / 离线 SenseVoice）在本地进行语音识别，输出中文实时字幕。
 - 字幕**只保存在本机**（`%LOCALAPPDATA%\SubtitleJun\`），提供置顶悬浮字幕、搜索、热词、文本纠正与 TXT/SRT/Markdown 导出。
 - 支持**离线说话人分离**：会后导入一段录音（「说话人 / Speakers」按钮）即可分析并标注**匿名发言人 A / B / …**（声纹聚类出的编号，**非身份识别**；默认无需联网下载以外的配置）。
+- 支持**离线文件转写**：把本地**音频/视频文件**离线转写成带时间戳的文字，提供**快速 / 标准 / 高精度**三种模式（高精度使用离线 SenseVoice 模型，需单独安装，且**不支持模型级热词**）。目前主要经命令行工具 `tools/FileTranscribe` 使用，**图形界面尚未接入**。
 - 运行期**不发起任何网络请求**：唯一引用 `System.Net.Http` 的 `ModelDownloads` 程序集与识别链路隔离，可静态验证（见“离线保证”）。
 
 技术栈：.NET 8 / WPF（`net8.0-windows`，x64，**Claude 风格极简界面**：自绘主题 + 线性图标，支持**明/暗主题实时切换**，不依赖任何第三方 UI 框架）、NAudio 2.2.1、sherpa-onnx 1.13.8、Microsoft.Data.Sqlite 8.0.31（WAL）。
@@ -78,11 +80,12 @@ dotnet publish src/LocalMeetingSubtitle.App/LocalMeetingSubtitle.App.csproj `
 │  ├─ LocalMeetingSubtitle.UnitTests
 │  ├─ LocalMeetingSubtitle.IntegrationTests
 │  └─ LocalMeetingSubtitle.PerformanceTests
-├─ tools/                        # 4 个开发/安装期工具
+├─ tools/                        # 5 个开发/安装期工具
 │  ├─ ModelManager               # 列出/安装/校验模型
 │  ├─ AudioCaptureProbe          # WASAPI 回环探测与录音
 │  ├─ AsrBenchmark               # 真实模型解码计时/RTF/内存
-│  └─ OfflineVerification        # 离线能力 5 项校验
+│  ├─ OfflineVerification        # 离线能力 5 项校验
+│  └─ FileTranscribe             # 文件转写（三模式：快速/标准/高精度）
 ├─ docs/                         # 本套文档（见下）
 ├─ models/                       # 开发期下载的模型（不入库）
 └─ dist/                         # 发布产物（不入库）

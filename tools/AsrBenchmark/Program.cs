@@ -24,6 +24,7 @@ int chunkMs = opts.TryGetValue("chunk-ms", out var c) && int.TryParse(c, out var
 float hotwordsScore = opts.TryGetValue("hotwords-score", out var hs) && float.TryParse(hs, NumberStyles.Float, CultureInfo.InvariantCulture, out var hsf) ? hsf : 1.5f;
 string? hotwords = opts.GetValueOrDefault("hotwords");
 bool offline = opts.ContainsKey("offline");
+string decoding = opts.GetValueOrDefault("decoding") ?? "greedy_search";
 
 AsrEngineOptions options;
 if (opts.TryGetValue("model-dir", out var explicitDir))
@@ -38,6 +39,7 @@ if (opts.TryGetValue("model-dir", out var explicitDir))
         TokensFileName = "tokens.txt",
         ModelFileName = "model.int8.onnx",
         NumThreads = threads,
+        DecodingMethod = decoding,
         HotwordsFile = hotwords,
         HotwordsScore = hotwordsScore
     };
@@ -53,7 +55,7 @@ else
         Console.Error.WriteLine($"Unknown model id '{modelId}'. Known: {string.Join(", ", AsrModelCatalog.All.Select(m => m.Id))}");
         return 2;
     }
-    options = AsrOptionsFactory.FromDescriptor(desc, modelsRoot, hotwords, threads, hotwordsScore);
+    options = AsrOptionsFactory.FromDescriptor(desc, modelsRoot, hotwords, threads, hotwordsScore, decoding);
     Console.WriteLine($"MODEL_ID={desc.Id}");
 }
 
@@ -102,7 +104,7 @@ var text = new System.Text.StringBuilder();
 int endpoints = 0;
 string lastPartial = "";
 
-for (int offset = 0; offset < mono16k.Length; offset += chunkSamples)
+for (int offset = 0; offset < mono16k.Length && !offline; offset += chunkSamples)
 {
     int n = Math.Min(chunkSamples, mono16k.Length - offset);
     inferSw.Start();
@@ -130,6 +132,22 @@ for (int offset = 0; offset < mono16k.Length; offset += chunkSamples)
     }
 }
 if (lastPartial.Length > 0) text.Append(lastPartial);
+
+// Offline (whole-utterance) models must see the complete segment in one accept + decode;
+// feeding them chunk-by-chunk would decode each fragment with no context.
+if (offline)
+{
+    inferSw.Start();
+    session.AcceptWaveform(mono16k, 16000);
+    while (session.IsReady()) session.Decode();
+    var result = session.GetResult();
+    inferSw.Stop();
+    if (!string.IsNullOrEmpty(result.Text))
+    {
+        text.Append(result.Text);
+        endpoints++;
+    }
+}
 
 double inferenceSeconds = inferSw.Elapsed.TotalSeconds;
 double rtf = audioSeconds > 0 ? inferenceSeconds / audioSeconds : 0;
