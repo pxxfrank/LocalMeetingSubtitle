@@ -300,3 +300,49 @@ consequence/trade-off.
   `Interrupted` (they can then be resumed); canceled jobs end as `Cancelled` with the session `Paused`;
   a decode failure ends as `Failed` with the session `Aborted`. Cancel/resume/recover are exercised by
   `TranscriptionJobServiceTests` and the `FileTranscribe --jobs` interrupt→resume run.
+
+## D21 — The bilingual model declares `SupportsHotwords = false` (measured, not assumed)
+
+- **Decision:** `AsrModelCatalog.StreamingZipformerBilingualZhEn` sets `SupportsHotwords = false` even
+  though it is a streaming transducer. No new descriptor field and no new policy type were added: the
+  existing flag already flows `descriptor.SupportsHotwords → IHotwordService.SetEngineCapability →
+  HotwordMode → WriteModelHotwordFile (null) → AsrOptionsFactory (hotwordsFile: null) →`
+  `SherpaOnnxAsrEngine.BuildOnline (hotwords = false)`.
+- **Context:** the user asked for Chinese+English recognition **with** hotwords. On sherpa-onnx 1.13.8
+  the bilingual model's output was **byte-identical** with hotword scores 1.5, 4.0 and 20 under an
+  otherwise identical `modified_beam_search` configuration, while the same hotwords file measurably
+  steered `streaming-zipformer-zh-14M` (`生疼 → 升腾`). Removing `bpe.model`/`bpe.vocab` from the model
+  directory changed nothing, so this is a property of the model. Its `tokens.txt` also has no
+  whole-word English tokens (`CANN`/`IEEE`/`TENSOR` absent; English is BPE subwords), so ASCII glossary
+  terms could not be boosted even if the context graph applied.
+- **Rationale:** advertising capability the engine cannot deliver is a lie the UI would repeat
+  verbatim (`HotwordModeText` → 「不支持 / not supported」). The flag is the single source of truth and
+  needs no new plumbing; a new boolean would duplicate it and a policy class would wrap a one-line rule.
+- **Consequence:** the bilingual model runs `greedy_search` (measured at least as stable as beam search
+  on this model); domain terms reach it through the deterministic correction layer
+  (`TextCorrectionEngine` + `BuiltInLexicon.Rules`), which is model-independent and is equally the only
+  mechanism that can fix acronyms such as `CANN` on the default model. Guarded by
+  `AsrModelCatalogMetadataTests.The_bilingual_model_never_claims_model_level_hotwords` and
+  `BuiltInLexiconTests.A_model_without_hotword_support_still_corrects_terms`.
+
+## D22 — The bilingual model is downloaded on demand, and model fallback is loud
+
+- **Decision:** the bilingual model is **not bundled**. It is selected and fetched in-app via
+  `设置 → 识别 / Settings → Recognition` (`IModelManager.EnsureInstalledAsync`, reachable from the App
+  for the first time). Model choice is resolved by the pure `ModelResolver` (`Core/Models/`), which
+  **always returns a descriptor and always explains a fallback**.
+- **Context:** bundling a ~198 MB model would nearly double an artifact that is currently ~184 MB
+  published, for an optional feature, in a product whose default path is offline-only. Separately, a
+  flattened/missing `models/` directory once made the app report `installed=False` and disable Start
+  **with no explanation** (the packaging P0).
+- **Rationale:** on-demand keeps the offline-first artifact small and puts the network dependency
+  behind an explicit user action (the `ModelDownloads` assembly already existed for exactly this). A
+  pure resolver with an injected `Func<ModelDescriptor,bool>` keeps the policy I/O-free, testable and
+  offline-verifiable.
+- **Consequence:** `ResolveModel()` can no longer silently substitute a model — it surfaces
+  `FallbackReason` as a banner and persists the corrected id. Selecting an un-installed model in
+  Settings is refused (rather than persisted and then discovered at Start). Every required model file
+  now pins `SizeBytes`, which makes download progress real (`HttpModelManager` divides by the sum) and
+  makes a truncated file fail verification; `ModelSelectionIntegrationTests` asserts the pinned sizes
+  against the files on disk. Trade-off accepted: the optional model needs a network connection once
+  (KNOWN_ISSUES P3-28).

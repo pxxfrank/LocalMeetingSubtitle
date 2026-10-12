@@ -187,6 +187,7 @@ public partial class App : Application
         return new SettingsViewModel(
             services.GetRequiredService<ISettingsRepository>(),
             services.GetRequiredService<IHotwordRepository>(),
+            services.GetRequiredService<IModelManager>(),
             _mainViewModel!,
             _logger!);
     }

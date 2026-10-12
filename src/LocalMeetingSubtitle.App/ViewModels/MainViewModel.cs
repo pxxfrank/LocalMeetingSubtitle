@@ -70,6 +70,7 @@ public sealed class MainViewModel : ObservableObject
     private string _nativeVersion = "";
     private string _nativeError = "";
     private bool _modelInstalled;
+    private string? _modelFallbackReason;
     private bool _isBusy;
 
     private DispatcherTimer? _warningTimer;
@@ -861,6 +862,14 @@ public sealed class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(ModelName));
         OnPropertyChanged(nameof(ModelStatusText));
 
+        // Tell the user when their stored model could not be honoured, instead of silently
+        // recognizing with a different one and disabling Start without explanation.
+        if (_modelFallbackReason is { } fallbackReason)
+        {
+            SaveSettingsSafe();
+            RaiseWarning(fallbackReason);
+        }
+
         await RefreshDevicesAsync().ConfigureAwait(true);
 
         IsPreparing = false;
@@ -875,19 +884,16 @@ public sealed class MainViewModel : ObservableObject
 
     private void ResolveModel()
     {
-        ModelDescriptor? descriptor = null;
-        if (!string.IsNullOrWhiteSpace(_settings.LastModelId))
-        {
-            descriptor = _modelManager.FindById(_settings.LastModelId!);
-        }
+        var resolution = ModelResolver.Resolve(
+            _settings.LastModelId,
+            AsrModelCatalog.StreamingModels,
+            AsrModelCatalog.StreamingZipformerZh14M,
+            _modelManager.IsInstalled);
 
-        descriptor ??= _modelManager.Catalog.FirstOrDefault(m => _modelManager.IsInstalled(m));
-        descriptor ??= _modelManager.Catalog.FirstOrDefault();
-
-        _descriptor = descriptor;
-        _modelInstalled = descriptor is not null && _modelManager.IsInstalled(descriptor);
-
-        if (descriptor is not null) _settings.LastModelId = descriptor.Id;
+        _descriptor = resolution.Descriptor;
+        _modelInstalled = _modelManager.IsInstalled(_descriptor);
+        _settings.LastModelId = _descriptor.Id;
+        _modelFallbackReason = resolution.FallbackReason;
     }
 
     private async Task RefreshDevicesAsync()
@@ -1205,44 +1211,74 @@ public sealed class MainViewModel : ObservableObject
         return SpeakerDisplayName(speaker);
     }
 
+    /// <summary>
+    /// Records the recognition model chosen in Settings. The engine is rebuilt by the next
+    /// <see cref="ReapplyHotwordsAsync"/> (or <see cref="StartAsync"/>), so the caller decides when
+    /// the swap happens.
+    /// </summary>
+    public void SelectModel(ModelDescriptor descriptor)
+    {
+        if (descriptor is null || !_modelManager.IsInstalled(descriptor)) return;
+        if (_descriptor?.Id == descriptor.Id) return;
+
+        _descriptor = descriptor;
+        _modelInstalled = true;
+        _settings.LastModelId = descriptor.Id;
+        _modelFallbackReason = null;
+        OnPropertyChanged(nameof(ModelName));
+        OnPropertyChanged(nameof(ModelStatusText));
+        UpdateReadinessStatus();
+    }
+
     /// <summary>Reloads hotwords and, when transcribing, hot-swaps the engine (applies next utterance).</summary>
     public async Task ReapplyHotwordsAsync()
     {
         try
         {
+            // Capability depends on the selected model, so refresh it here rather than only at Start.
             _hotwordService.SetEngineCapability(_descriptor?.SupportsHotwords ?? false, true);
             await _hotwordService.ReloadAsync().ConfigureAwait(true);
             OnPropertyChanged(nameof(HotwordModeText));
             OnPropertyChanged(nameof(HotwordDetailText));
 
-            if (_pipeline is null || State is not (TranscriptionState.Transcribing or TranscriptionState.Paused) || _descriptor is null)
-            {
-                RaiseWarning("热词已重新加载（将在下次转写时生效）/ hotwords reloaded (applies next time).");
-                return;
-            }
-
-            var hotwordPath = BuildHotwordFile();
-            var options = AsrOptionsFactory.FromDescriptor(_descriptor, _modelManager.ModelsRoot, hotwordPath, _settings.AsrNumThreads);
-            var newEngine = _engineFactory();
-            var init = await Task.Run(async () => await newEngine.InitializeAsync(options).ConfigureAwait(false)).ConfigureAwait(true);
-
-            if (!init.Ok)
-            {
-                newEngine.Dispose();
-                RaiseWarning("应用热词失败 / applying hotwords failed：" + init.Message);
-                return;
-            }
-
-            _pipeline.RequestEngineSwap(newEngine);
-            _ownedEngine = newEngine; // the pipeline disposes the old engine; we own the new one
-            RaiseWarning("热词已更新，从下一句话开始生效 / hotwords updated — applies from the next utterance.");
-            _log.Info("Requested engine swap to apply updated hotwords.");
+            await ApplyEngineChangeAsync("识别设置已更新 / recognition settings updated").ConfigureAwait(true);
         }
         catch (Exception ex)
         {
             _log.Error("Reapplying hotwords failed", ex);
-            RaiseWarning("应用热词失败 / applying hotwords failed：" + ex.Message);
+            RaiseWarning("应用设置失败 / applying settings failed：" + ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Rebuilds the recognizer from the current descriptor + settings and hot-swaps it into the
+    /// running pipeline; the swap takes effect from the next utterance, exactly like a hotword
+    /// change. When not transcribing, the change simply applies at the next Start.
+    /// </summary>
+    private async Task ApplyEngineChangeAsync(string appliedMessage)
+    {
+        if (_pipeline is null || State is not (TranscriptionState.Transcribing or TranscriptionState.Paused) || _descriptor is null)
+        {
+            RaiseWarning($"{appliedMessage}（将在下次开始转写时生效）/ applies at the next Start.");
+            return;
+        }
+
+        var hotwordPath = BuildHotwordFile();
+        var options = AsrOptionsFactory.FromDescriptor(_descriptor, _modelManager.ModelsRoot, hotwordPath, _settings.AsrNumThreads);
+        var newEngine = _engineFactory();
+        var init = await Task.Run(async () => await newEngine.InitializeAsync(options).ConfigureAwait(false)).ConfigureAwait(true);
+
+        if (!init.Ok)
+        {
+            newEngine.Dispose();
+            RaiseWarning("应用设置失败 / applying settings failed：" + init.Message);
+            return;
+        }
+
+        _pipeline.RequestEngineSwap(newEngine);
+        _ownedEngine = newEngine; // the pipeline disposes the old engine; we own the new one
+        RaiseWarning($"{appliedMessage}，从下一句话开始生效 / applies from the next utterance.");
+        _log.Info($"Requested engine swap: {appliedMessage}.");
     }
 
     // =====================================================================

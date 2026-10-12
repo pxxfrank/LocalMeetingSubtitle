@@ -16,12 +16,24 @@ public partial class SettingsWindow : Window
 
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
-        if (_vm is not null) _vm.CloseRequested -= OnCloseRequested;
+        if (_vm is not null)
+        {
+            _vm.CloseRequested -= OnCloseRequested;
+            Closing -= OnClosing;
+        }
 
         _vm = e.NewValue as SettingsViewModel;
 
-        if (_vm is not null) _vm.CloseRequested += OnCloseRequested;
+        if (_vm is not null)
+        {
+            _vm.CloseRequested += OnCloseRequested;
+            // The window's ✕ button does not go through CloseCommand, so cancel any in-flight
+            // model download here (the manager deletes its partial ".download" file on cancel).
+            Closing += OnClosing;
+        }
     }
+
+    private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e) => _vm?.OnClosing();
 
     private void OnCloseRequested(object? sender, EventArgs e) => Close();
 }

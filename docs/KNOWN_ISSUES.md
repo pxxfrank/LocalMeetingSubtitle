@@ -42,7 +42,7 @@ six open P3 items (P3-21 .. P3-26), and it supersedes P3-14 (Phase 4 is now impl
 | P3-8 | Post-meeting recording capture not wired (import only) | Low | Open |
 | P3-9 | Diarization models are downloaded, not bundled in the publish | Low | Open |
 | P3-10 | Real-time + diarization concurrency not measured on target hardware | Low | Open |
-| P3-11 | Built-in lexicon: the bundled zh-14M model cannot encode several lexicon terms | Low | Open |
+| P3-11 | Built-in lexicon: the bundled zh-14M model cannot encode several lexicon terms | Low | Open — the 中英 model also renders `升腾` rather than `昇腾`, so only the correction rules can fix these |
 | P3-12 | Bundled FFmpeg is LGPL (decode-only): no libx264, so H.264 **encoding** is unavailable | Low | Open (harmless — 字幕君 only decodes) |
 | P3-13 | FFmpeg not yet bundled into the installer / portable ZIP | Low | Open → V0.5 Phase 8 |
 | P3-14 | File transcription Phases 5–8 not implemented (Phase 4 is now done) | Low | Open |
@@ -58,6 +58,8 @@ six open P3 items (P3-21 .. P3-26), and it supersedes P3-14 (Phase 4 is now impl
 | P3-24 | The job row's `ProcessedMs` is a throttled (≥ 2 s) **display** snapshot, never the resume cursor | Low | Open |
 | P3-25 | Whole-file diarization is unchanged from Phase 3 (same as P3-17) | Low | Open |
 | P3-26 | Still no UI for file transcription (Phase 5); `EnableVadSegmenting` unwired (same as P3-2) | Low | Open |
+| P3-27 | Model-level hotwords have **no effect** on the bilingual (中英) model — measured identical output at score 1.5/4.0/20; its token table has no whole-word English tokens either | Low | **Declared**, not a defect (`SupportsHotwords = false`; terms use correction rules) |
+| P3-28 | The bilingual (中英) model is **downloaded on demand**, not bundled — it needs network once before it can be selected | Low | Open (deliberate: +198 MB would nearly double the installer) |
 | BLOCKED-1 | Full Start→transcribe→persist UI path | P0 | **CLOSED (2026-10-09, dev host)** — a UI-driven Start on the published build produced and persisted real subtitles |
 | BLOCKED-2 | No real-meeting 3-hour stability run | P0 (target) | Blocked (`ThreeHourSoak` never executed) |
 | BLOCKED-3 | Installer signature is self-signed / untrusted | P1 (release) | Partial (MSI + Setup.exe produced & signed; no CA-issued certificate) |
@@ -477,6 +479,37 @@ following are known and accepted for this state.
   (P3-2). There is no progress/status UI for a queued or running job.
 - **Workaround:** use `tools/FileTranscribe --jobs [--list-jobs]` on the CLI; see
   [`DEVELOPMENT.md`](DEVELOPMENT.md).
+
+#### P3-27 — Model-level hotwords have no effect on the bilingual (中英) model *(OPEN by design)*
+
+- **Impact:** with the bilingual model selected, domain terms cannot be boosted through
+  `modified_beam_search` + a hotwords file. Measured on sherpa-onnx 1.13.8 with an identical
+  configuration: the zh-14M model was measurably steered by the hotwords file (`生疼 → 升腾`), while
+  the bilingual model's output was **byte-identical** at hotwords score 1.5, 4.0 and 20; deleting
+  `bpe.model`/`bpe.vocab` from the model directory changed nothing. Its `tokens.txt` (6,257 entries)
+  also has **no whole-word English tokens** (`CANN`, `IEEE`, `TENSOR` are absent — English is BPE
+  subwords such as `▁TH` + `DAY` + `ING`), so ASCII glossary terms could not be boosted even if the
+  context graph applied.
+- **Why this is "declared" rather than a bug:** the catalog sets
+  `AsrModelCatalog.StreamingZipformerBilingualZhEn.SupportsHotwords = false`, so
+  `DefaultHotwordService.Mode` reports `HotwordMode.NotSupported`, `WriteModelHotwordFile` returns
+  `null`, the engine stays on `greedy_search`, and the Settings picker says so explicitly. The app
+  never claims boosting it cannot deliver.
+- **Workaround:** domain terms reach this model through the deterministic correction layer
+  (`TextCorrectionEngine` + `BuiltInLexicon.Rules`) — see
+  [`MODEL_SELECTION.md`](MODEL_SELECTION.md).
+
+#### P3-28 — The bilingual (中英) model is downloaded on demand *(OPEN, low)*
+
+- **Impact:** selecting 中英 requires a ~198 MB one-time download from Hugging Face; the installer and
+  portable ZIP keep their current size (bundling it would nearly double the artifact).
+- **Mitigation:** the picker reports the model as *未安装 / not installed* together with its size, the
+  download reports real progress (the catalog pins every file's `SizeBytes`; without that,
+  `HttpModelManager` divides by a zero total and the bar jumps from 0 to 1), and disk space /
+  writability are pre-checked before the transfer starts. `HttpModelManager` verifies the file
+  **size** only (no SHA-256), and cancelling deletes the partial `.download` file.
+- **Workaround:** pre-seed `models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20` with
+  `tools/ModelManager install --id streaming-zipformer-bilingual-zh-en` on a connected machine.
 
 ## Open defect (P2 — still open)
 

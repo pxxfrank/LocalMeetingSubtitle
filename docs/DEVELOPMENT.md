@@ -120,10 +120,20 @@ dotnet run --project tools/ModelManager -- verify --catalog diarization `
   (`*.sln`) and uses `models/` beside it; override with `--models-root <path>`.
 - **App models root:** the application always uses `%LOCALAPPDATA%\SubtitleJun\models`.
   To let the app start, install the model there (see above).
+- **Selecting a model in the app:** the live recognizer's model is chosen in
+  `设置 → 识别 / Settings → Recognition` (`AsrModelCatalog.StreamingModels` — the streaming descriptors
+  only; offline SenseVoice is file-transcription-only). The **bilingual zh-en** model is *not bundled*:
+  the user downloads it in-app (`SettingsViewModel` → `IModelManager.EnsureInstalledAsync`), which is
+  the only place the App uses the network. Selection and fallback live in the pure
+  `Core/Models/ModelResolver.cs`; a missing model falls back to the default **and reports why**.
+- **Pinned sizes are load-bearing:** every `ModelFileSpec` in `AsrModelCatalog` declares `SizeBytes`.
+  `HttpModelManager` sums them for download progress and checks them when deciding "installed", so a
+  wrong pin makes a fully downloaded model look missing. `ModelSelectionIntegrationTests` asserts the
+  pins against the files on disk — update both together if a model is ever republished.
 - **Adding a *new* model** (one not already in the catalog) requires adding a `ModelDescriptor` to
-  `AsrModelCatalog.cs` (file names, URLs, license, hotword support) — this is a **code change**, so it
-  is intentionally outside the scope of the documentation-only work in this repository state. Once a
-  descriptor exists, the tool downloads/verifies it with no further code.
+  `AsrModelCatalog.cs` (file names, URLs, license, hotword support, **and per-file sizes**) — this is a
+  **code change**, so it is intentionally outside the scope of the documentation-only work in this
+  repository state. Once a descriptor exists, the tool downloads/verifies it with no further code.
 
 The candidate model repositories are documented in [`MODEL_SELECTION.md`](MODEL_SELECTION.md).
 

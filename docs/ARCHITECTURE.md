@@ -134,6 +134,13 @@ after a meeting (or over an already-saved session) and only when the user import
 Engine hot-swap (`RequestEngineSwap`) runs on the inference thread: the current utterance is
 flushed and persisted first, then the engine/session are replaced — capture is never interrupted.
 `AsrNumThreads` therefore applies at the next Start / engine swap, not live (see KNOWN_ISSUES P3).
+The same path performs a **recognition-model switch** (`Settings → 识别`): `MainViewModel.SelectModel`
+only records the choice, and `ReapplyHotwordsAsync` → `ApplyEngineChangeAsync` rebuilds the engine
+from the (possibly new) descriptor, so a model change made while transcribing also takes effect from
+the next utterance. The model's hotword capability travels with the descriptor:
+`ModelDescriptor.SupportsHotwords → IHotwordService.SetEngineCapability → HotwordMode →
+WriteModelHotwordFile (null when unsupported) → AsrOptionsFactory(hotwordsFile: null)`. When no engine
+is running, a switch simply applies at the next Start.
 
 Because the diarization thread runs at **below-normal** priority and is capped to a small CPU-thread
 count (`SherpaOfflineSpeakerDiarizer`, default `min(ProcessorCount/4, 4)`), the OS scheduler preempts

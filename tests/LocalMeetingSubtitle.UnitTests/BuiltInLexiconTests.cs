@@ -111,4 +111,24 @@ public sealed class BuiltInLexiconTests
         // 昇 is not in the bundled model's vocabulary, so this term can only be fixed by a rule.
         Assert.Contains("毕昇", service.ApplyCorrections("毕升编译器"));
     }
+
+    [Fact]
+    public async Task A_model_without_hotword_support_still_corrects_terms()
+    {
+        // This is the bilingual (中英) path: model-level boosting measured ineffective, so the
+        // descriptor advertises no hotwords and terminology must keep flowing through the rules.
+        await using var temp = await TempDatabase.CreateAsync();
+        var service = new DefaultHotwordService(temp.CreateHotwordRepository());
+        await service.ReloadAsync();
+        service.SetEngineCapability(supportsModelHotwords: false, modelCanBeRebuiltWithoutDataLoss: true);
+
+        Assert.Equal(HotwordMode.NotSupported, service.Mode);
+
+        var path = Path.Combine(Path.GetTempPath(), "lms-nohw-" + Guid.NewGuid().ToString("N") + ".txt");
+        Assert.Null(service.WriteModelHotwordFile(path));
+        Assert.False(File.Exists(path));
+
+        Assert.Contains("昇腾", service.ApplyCorrections("我们使用升腾训练"), StringComparison.Ordinal);
+        Assert.Contains("鲲鹏", service.ApplyCorrections("部署在昆鹏服务器"), StringComparison.Ordinal);
+    }
 }

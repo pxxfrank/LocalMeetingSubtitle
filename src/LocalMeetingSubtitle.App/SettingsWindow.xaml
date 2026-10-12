@@ -92,7 +92,33 @@
 
                 <!-- ===== 识别 / Recognition ===== -->
                 <TextBlock Text="识别 / Recognition" FontWeight="SemiBold" Margin="0,0,0,10" />
-                <Grid>
+
+                <TextBlock Text="识别模型 / Recognition model:" FontSize="12"
+                           Foreground="{DynamicResource TextMuted}" Margin="0,0,0,4" />
+                <ComboBox ItemsSource="{Binding Models}" DisplayMemberPath="DisplayName"
+                          SelectedItem="{Binding SelectedModel}" />
+                <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" FontSize="12"
+                           Foreground="{DynamicResource TextMuted}" Text="{Binding SelectedModelStatusText}" />
+                <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" FontSize="12"
+                           Foreground="{DynamicResource TextMuted}" Text="{Binding SelectedModelCaveat}" />
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <Button Style="{StaticResource BtnGhost}" Command="{Binding DownloadCommand}"
+                            Visibility="{Binding ShowDownloadButton, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="下载模型 / Download model" VerticalAlignment="Center" />
+                    </Button>
+                    <Button Style="{StaticResource BtnGhost}" Command="{Binding CancelDownloadCommand}" Margin="6,0,0,0"
+                            Visibility="{Binding IsDownloading, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="取消 / Cancel" VerticalAlignment="Center" />
+                    </Button>
+                </StackPanel>
+                <ProgressBar Height="6" Margin="0,8,0,0" Minimum="0" Maximum="1"
+                             Value="{Binding DownloadProgress}"
+                             Visibility="{Binding IsDownloading, Converter={StaticResource BoolToVis}}" />
+                <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" FontSize="12"
+                           Foreground="{DynamicResource Warning}" Text="{Binding DownloadError}"
+                           Visibility="{Binding HasDownloadError, Converter={StaticResource BoolToVis}}" />
+
+                <Grid Margin="0,16,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />

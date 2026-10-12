@@ -1,12 +1,14 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using LocalMeetingSubtitle.App.Infrastructure;
+using LocalMeetingSubtitle.Asr;
 using LocalMeetingSubtitle.Core.Abstractions;
 using LocalMeetingSubtitle.Core.Hotwords;
 using LocalMeetingSubtitle.Core.Models;
 
 namespace LocalMeetingSubtitle.App.ViewModels;
 
-/// <summary>Backs the settings window: subtitle fonts, floating-subtitle options, ASR threads and hotwords.</summary>
+/// <summary>Backs the settings window: subtitle fonts, floating-subtitle options, the recognition model, ASR threads and hotwords.</summary>
 public sealed class SettingsViewModel : ObservableObject
 {
     private static readonly string[] FontFamilies =
@@ -16,32 +18,113 @@ public sealed class SettingsViewModel : ObservableObject
 
     private readonly ISettingsRepository _settingsRepository;
     private readonly IHotwordRepository _hotwordRepository;
+    private readonly IModelManager _modelManager;
     private readonly MainViewModel _main;
     private readonly IAppLogger _log;
 
     private AppSettings _settings = new();
+    private CancellationTokenSource? _downloadCts;
 
     public SettingsViewModel(
         ISettingsRepository settingsRepository,
         IHotwordRepository hotwordRepository,
+        IModelManager modelManager,
         MainViewModel main,
         IAppLogger log)
     {
         _settingsRepository = settingsRepository;
         _hotwordRepository = hotwordRepository;
+        _modelManager = modelManager;
         _main = main;
         _log = log;
 
+        Models = AsrModelCatalog.StreamingModels;
+        _selectedModel = Models.FirstOrDefault() ?? AsrModelCatalog.StreamingZipformerZh14M;
+
         SaveCommand = new AsyncRelayCommand(SaveAsync);
         CloseCommand = new RelayCommand(() => CloseRequested?.Invoke(this, EventArgs.Empty));
+        DownloadCommand = new AsyncRelayCommand(DownloadAsync, () => CanDownload);
+        CancelDownloadCommand = new RelayCommand(CancelDownload, () => IsDownloading);
     }
 
     public ObservableCollection<string> AvailableFontFamilies { get; } = new(FontFamilies);
 
     public AsyncRelayCommand SaveCommand { get; }
     public RelayCommand CloseCommand { get; }
+    public AsyncRelayCommand DownloadCommand { get; }
+    public RelayCommand CancelDownloadCommand { get; }
 
     public event EventHandler? CloseRequested;
+
+    // ---- Recognition model ------------------------------------------------
+
+    /// <summary>Live-path models the user may choose from (offline models are excluded).</summary>
+    public IReadOnlyList<ModelDescriptor> Models { get; }
+
+    private ModelDescriptor _selectedModel;
+    public ModelDescriptor SelectedModel
+    {
+        get => _selectedModel;
+        set
+        {
+            // WPF can push a transient null through SelectedItem while ItemsSource settles; the list
+            // never legitimately has "no selection", and a null would break the status properties.
+            if (value is null || ReferenceEquals(value, _selectedModel)) return;
+            if (SetProperty(ref _selectedModel, value))
+            {
+                DownloadError = "";
+                OnPropertyChanged(nameof(SelectedModelStatusText));
+                OnPropertyChanged(nameof(SelectedModelCaveat));
+                OnPropertyChanged(nameof(IsSelectedModelInstalled));
+                OnPropertyChanged(nameof(ShowDownloadButton));
+                RelayCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool IsSelectedModelInstalled => _modelManager.IsInstalled(SelectedModel);
+
+    /// <summary>True while the selected model still has to be downloaded.</summary>
+    public bool ShowDownloadButton => !IsSelectedModelInstalled;
+
+    public string SelectedModelStatusText => IsSelectedModelInstalled
+        ? $"已安装 / installed（{FormatMegabytes(SelectedModel.ApproxSizeBytes)}）"
+        : $"未安装 / not installed — 需要下载 / download required（{FormatMegabytes(SelectedModel.ApproxSizeBytes)}）";
+
+    /// <summary>
+    /// States truthfully how domain terms take effect for this model: the bilingual model's
+    /// model-level hotwords measured as ineffective, so it advertises correction rules only.
+    /// </summary>
+    public string SelectedModelCaveat => SelectedModel.SupportsHotwords
+        ? "该模型支持模型级热词：术语既参与模型加权，也参与文本纠正。/ Supports model-level hotwords: terms are boosted and corrected."
+        : "该模型不支持模型级热词：术语仅通过内置/自定义文本纠正规则生效。/ No model-level hotwords: terms apply through the correction rules only.";
+
+    private bool _isDownloading;
+    public bool IsDownloading
+    {
+        get => _isDownloading;
+        private set
+        {
+            if (SetProperty(ref _isDownloading, value)) RelayCommand.RaiseCanExecuteChanged();
+        }
+    }
+
+    private double _downloadProgress;
+    public double DownloadProgress { get => _downloadProgress; private set => SetProperty(ref _downloadProgress, value); }
+
+    private string _downloadError = "";
+    public string DownloadError
+    {
+        get => _downloadError;
+        private set
+        {
+            if (SetProperty(ref _downloadError, value)) OnPropertyChanged(nameof(HasDownloadError));
+        }
+    }
+
+    public bool HasDownloadError => !string.IsNullOrEmpty(DownloadError);
+
+    private bool CanDownload => !IsDownloading && !IsSelectedModelInstalled;
 
     private string _subtitleFontFamily = "Microsoft YaHei UI";
     public string SubtitleFontFamily { get => _subtitleFontFamily; set => SetProperty(ref _subtitleFontFamily, value); }
@@ -150,6 +233,9 @@ public sealed class SettingsViewModel : ObservableObject
         RecordingMode = _settings.RecordingMode;
         Theme = string.IsNullOrWhiteSpace(_settings.Theme) ? ThemeManager.Light : _settings.Theme;
 
+        SelectedModel = Models.FirstOrDefault(m => string.Equals(m.Id, _settings.LastModelId, StringComparison.OrdinalIgnoreCase))
+            ?? _selectedModel;
+
         try
         {
             var hotwords = await _hotwordRepository.GetHotwordsAsync().ConfigureAwait(true);
@@ -165,6 +251,15 @@ public sealed class SettingsViewModel : ObservableObject
     {
         try
         {
+            var chosenModel = SelectedModel;
+            var modelChanged = !string.Equals(chosenModel.Id, _settings.LastModelId, StringComparison.Ordinal);
+            if (modelChanged && !_modelManager.IsInstalled(chosenModel))
+            {
+                // Never persist a model that cannot be loaded: Start would silently stay disabled.
+                StatusMessage = "该模型尚未下载，请先下载 / that model is not downloaded yet.";
+                return;
+            }
+
             _settings.SubtitleFontFamily = string.IsNullOrWhiteSpace(SubtitleFontFamily) ? "Microsoft YaHei UI" : SubtitleFontFamily;
             _settings.SubtitleFontSize = SubtitleFontSize;
             _settings.FloatingFontSize = FloatingFontSize;
@@ -178,11 +273,16 @@ public sealed class SettingsViewModel : ObservableObject
             _settings.UseBuiltInLexicon = UseBuiltInLexicon;
             _settings.RecordingMode = RecordingMode;
             _settings.Theme = Theme;
+            if (modelChanged) _settings.LastModelId = chosenModel.Id;
 
             await _settingsRepository.SaveAsync(_settings).ConfigureAwait(true);
 
             var hotwords = ParseHotwords();
             await _hotwordRepository.ReplaceHotwordsAsync(hotwords).ConfigureAwait(true);
+
+            // One engine rebuild covers both changes: SelectModel only records the choice, and
+            // ReapplyHotwordsAsync re-reads the descriptor, sets its hotword capability and hot-swaps.
+            if (modelChanged) _main.SelectModel(chosenModel);
             await _main.ReapplyHotwordsAsync().ConfigureAwait(true);
 
             _main.ApplySettings(_settings);
@@ -195,6 +295,120 @@ public sealed class SettingsViewModel : ObservableObject
             StatusMessage = "保存失败 / Save failed：" + ex.Message;
         }
     }
+
+    /// <summary>Cancels an in-flight download; the window's ✕ bypasses <see cref="CloseCommand"/>.</summary>
+    public void OnClosing()
+    {
+        try
+        {
+            _downloadCts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Already finished; nothing to cancel.
+        }
+    }
+
+    private async Task DownloadAsync()
+    {
+        var descriptor = SelectedModel;
+        DownloadError = "";
+
+        // Preflight so the user gets a precise reason instead of a generic HTTP failure.
+        var preflightError = CheckDownloadTarget(descriptor);
+        if (preflightError is not null)
+        {
+            DownloadError = preflightError;
+            return;
+        }
+
+        _downloadCts = new CancellationTokenSource();
+        IsDownloading = true;
+        DownloadProgress = 0;
+
+        try
+        {
+            // Progress<T> captures the UI context, so the callback runs on the UI thread.
+            var progress = new Progress<double>(p => DownloadProgress = Math.Clamp(p, 0, 1));
+            var result = await Task.Run(
+                () => _modelManager.EnsureInstalledAsync(descriptor, progress, _downloadCts.Token),
+                _downloadCts.Token).ConfigureAwait(true);
+
+            if (result.Success)
+            {
+                DownloadProgress = 1;
+                OnPropertyChanged(nameof(IsSelectedModelInstalled));
+                OnPropertyChanged(nameof(SelectedModelStatusText));
+                OnPropertyChanged(nameof(ShowDownloadButton));
+                StatusMessage = $"模型已下载 / downloaded：{descriptor.DisplayName}";
+                _log.Info($"Downloaded model {descriptor.Id} into {_modelManager.GetModelDirectory(descriptor)}.");
+            }
+            else
+            {
+                DownloadError = result.Message;
+                _log.Warn($"Downloading {descriptor.Id} failed: {result.Message}");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            DownloadError = "已取消下载 / download cancelled.";
+        }
+        catch (Exception ex)
+        {
+            DownloadError = "下载失败 / download failed：" + ex.Message;
+            _log.Error($"Downloading {descriptor.Id} failed", ex);
+        }
+        finally
+        {
+            IsDownloading = false;
+            _downloadCts?.Dispose();
+            _downloadCts = null;
+        }
+    }
+
+    private void CancelDownload()
+    {
+        try
+        {
+            _downloadCts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Already finished; nothing to cancel.
+        }
+    }
+
+    /// <summary>Returns a user-facing reason when the model cannot be downloaded to disk, else null.</summary>
+    private string? CheckDownloadTarget(ModelDescriptor descriptor)
+    {
+        var targetDir = _modelManager.GetModelDirectory(descriptor);
+        try
+        {
+            var root = Path.GetPathRoot(Path.GetFullPath(targetDir));
+            if (!string.IsNullOrEmpty(root))
+            {
+                // The manager downloads to a ".download" temp file in the same directory, so require
+                // the model size plus headroom before starting a 190 MB transfer.
+                var free = new DriveInfo(root).AvailableFreeSpace;
+                if (free < descriptor.ApproxSizeBytes + (64L * 1024 * 1024))
+                {
+                    return $"磁盘空间不足 / not enough disk space：需要 / need {FormatMegabytes(descriptor.ApproxSizeBytes)}。";
+                }
+            }
+
+            Directory.CreateDirectory(targetDir);
+            var probe = Path.Combine(targetDir, ".subtitlejun-write-test");
+            File.WriteAllText(probe, "x");
+            File.Delete(probe);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return $"模型目录不可写 / models directory is not writable：{targetDir}（{ex.Message}）";
+        }
+    }
+
+    private static string FormatMegabytes(long bytes) => $"{bytes / 1_000_000.0:F0} MB";
 
     private List<Hotword> ParseHotwords()
     {

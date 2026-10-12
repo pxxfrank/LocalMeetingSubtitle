@@ -2,8 +2,9 @@
 
 ## Current phase
 
-**V0.4.0 released (HEAD `554c8eb`); V0.5 "offline file transcription + role-tagged dialogue" is in
-progress — Phases 0–4 complete, Phase 5 not started.**
+**V0.5.0 released; V0.5 "offline file transcription + role-tagged dialogue" Phases 0–4 complete,
+Phase 5 not started. The live recognizer additionally offers a user-selectable 中英 (zh-en) model
+(downloaded on demand; model-level hotwords off by design) — see the last update section.**
 
 The V0.4 live-subtitle product builds, its tests pass on the development host, a real model decodes
 Chinese, offline guarantees are verified, and a self-contained release artifact is produced. V0.5 adds
@@ -14,7 +15,7 @@ long-audio offline ASR** (VAD → per-segment decode → global timestamps, with
 The remaining V0.5 work (dialogue editor UI, export, packaging) is **not started**, and the remaining
 work overall is **acceptance on the real Windows 11 target hardware**.
 
-Status banner: **候选发布版本 — 待实机验收；V0.5（离线文件转写）进行中 / Release candidate (V0.4.0) — pending hardware acceptance; V0.5 (offline file transcription) in progress.**
+Status banner: **候选发布版本 — 待实机验收；V0.5（离线文件转写）进行中 / Release candidate (V0.5.0) — pending hardware acceptance; V0.5 (offline file transcription) in progress.**
 
 ## Completed work by phase
 
@@ -41,8 +42,8 @@ Status banner: **候选发布版本 — 待实机验收；V0.5（离线文件转
 
 | Project | Result |
 | --- | --- |
-| `UnitTests` | **112 passed / 0 failed** |
-| `IntegrationTests` | **8 passed / 0 failed** |
+| `UnitTests` | **237 passed / 0 failed** (was 112; grown through V0.4/V0.5 + the model-selection feature) |
+| `IntegrationTests` | **48 passed / 0 failed** (was 8; grown through V0.4/V0.5 + the model-selection feature) |
 | `PerformanceTests` | **3 passed / 1 skipped** (skipped = `ThreeHourSoak`, never executed) |
 
 Additional evidence:
@@ -1130,3 +1131,83 @@ tools\FileTranscribe\bin\Debug\net8.0-windows\FileTranscribe.exe --jobs --list-j
 - **下一验收目标：** `RELEASE_CHECKLIST` 的 **FT-15**（对话编辑界面）与 **FT-17**（任务进度/状态 UI）。
 - **诚实边界：** 全部目标机（Win11 + Core Ultra 7 155H）验收仍 **BLOCKED/NOT_TESTED**；续跑转写**结构一致但非逐字一致**；
   演示为**协作式取消**而非真实进程杀灭；**无 UI**；长文件与 CER/WER **未测**。Phase 4 限制见 `KNOWN_ISSUES` P3-20..P3-26。
+
+## Update — 中英（zh-en）识别模型可选 + 模型级热词诚实化 (2026-10-12)
+
+### 需求与实测结论（用户提问：能否中英 ASR + 准确率不下降 + 支持热词？）
+
+**三者不能同时满足**（开发主机实测，sherpa-onnx 1.13.8，真实模型/真实音频）：
+
+| 目标 | 结论 |
+| --- | --- |
+| 支持中英 | ✅ 可以，且是碾压式提升 |
+| 准确率不下降 | ❌ 不能承诺：中英模型在部分中文素材上会**重复出字** |
+| 同时支持热词 | ❌ **与中英互斥**：中英模型对模型级热词无响应（1.5 / 4.0 / 20 三档分数输出**逐字相同**） |
+
+关键实测（同一音频、同一 `modified_beam_search`、同一热词文件）：
+
+| 音频（TTS） | 模型 | 无热词 | @1.5 | @4.0 |
+| --- | --- | --- | --- | --- |
+| `昇腾训练集群部署在鲲鹏服务器上` | zh-14M | `生疼训练集群部署在昆鹏鹏服务器上` | 同 | `生腾训练集群部署在昆仑服务器上` |
+| 同上 | 中英 | `升藤愉训练级集群部署在鲲鲲鹏鹏鹏鹏服务器上上` | **逐字相同** | 只是重复更多 |
+| `CANN是昇腾的异构计算架构` | zh-14M | `是生疼的异构计算架构` | `是升腾的异构计算架构` | `是升腾的异构计算架构` |
+| 同上 | 中英 | `是升升藤LY易易易购计算架架构` | **逐字相同** | **逐字相同**（@20 亦相同） |
+
+英文侧对比（同音频）：zh-14M `在国儿地位上字儿`；中英 `THE QUARTERLY REVIEW MEETING IS ON THURSDAY AT
+THREE OCLOCK IN THE AFTERNOON`。另发现：中英模型 `tokens.txt`（6257 条）**没有整词英文 token**
+（`CANN`/`IEEE`/`TENSOR` 均缺失，英文是 BPE 子词 `▁TH`+`DAY`+`ING`），所以**英文缩写类术语在任何模型上都无法用
+模型级热词命中**，只能靠纠正规则。完整数据见 [`MODEL_SELECTION.md`](MODEL_SELECTION.md)。
+
+### 采纳方案（用户选择 A）
+
+1. 默认模型**不变**（`streaming-zipformer-zh-14M`）——中文单语会议零回归。
+2. 新增**运行时可选**的中英模型，入口在 `设置 → 识别 / Settings → Recognition`。
+3. 中英模型**关闭模型级热词**（`SupportsHotwords = false`），术语改由**确定性纠正规则**
+   （`TextCorrectionEngine` + `BuiltInLexicon.Rules`）承担；UI 明确显示「不支持 / not supported」。
+4. 中英模型**按需下载**，不打进安装包（否则体积近乎翻倍）；下载带真实进度、取消与前置检查。
+
+### 代码改动（全部增量；默认路径行为不变）
+
+- **新增** `src/LocalMeetingSubtitle.Core/Models/ModelResolver.cs` —— 纯策略：选择 + 回退，
+  且**回退必须给出理由**（此前模型缺失会静默禁用「开始」且不解释）。
+- **修改** `src/LocalMeetingSubtitle.Asr/AsrModelCatalog.cs` —— 中英 `SupportsHotwords = false`（附实测注释）；
+  三个模型的 `ApproxSizeBytes` 改为真实值；所有必需文件 pin `SizeBytes`（否则 `HttpModelManager` 的
+  下载进度恒为 0→1，截断文件也可能被判为已安装）；新增 `StreamingModels`（实时路径可选集合，
+  刻意排除离线 SenseVoice——实时离线路径仍有零时长分段缺陷）。
+- **修改** `src/LocalMeetingSubtitle.App/ViewModels/MainViewModel.cs` —— `ResolveModel()` 改用
+  `ModelResolver`；新增 `SelectModel()`（只记录选择）；把引擎热切换抽成 `ApplyEngineChangeAsync()`，
+  `ReapplyHotwordsAsync()` 与模型切换共用（沿用 `RequestEngineSwap`：转写中热切换、下一句话生效，不中断采集）。
+- **修改** `src/LocalMeetingSubtitle.App/ViewModels/SettingsViewModel.cs` —— 注入 `IModelManager`（此前
+  App 内**从未调用** `EnsureInstalledAsync`）：模型列表/状态/体积、下载 + 取消 + 进度 + 错误、
+  磁盘空间与目录可写性前置检查、`OnClosing()` 取消在途下载（窗口 ✕ 不经过 `CloseCommand`）。
+- **修改** `src/LocalMeetingSubtitle.App/SettingsWindow.xaml(.cs)`、`App.xaml.cs` —— 识别模型选择 UI 与 DI 传参。
+
+### 测试
+- 单元 **222 → 237**（**+15**：`ModelResolverTests`（8）、`AsrModelCatalogMetadataTests`（6）、
+  `BuiltInLexiconTests` 新增「无热词能力时仍能纠正术语」（1））。
+- 集成 **46 → 48**（**+2**：`ModelSelectionIntegrationTests` —— pin 的体积与磁盘文件**逐一相符**、
+  中英模型能用真实原生库构建且保持 `greedy_search / hotwords=off`）。
+- 构建 0 错误；实时路径默认行为不变。
+
+### 验证命令
+```powershell
+$env:DOTNET_ROOT="$env:USERPROFILE\.dotnet"; $env:PATH="$env:USERPROFILE\.dotnet;$env:USERPROFILE\.dotnet\tools;$env:PATH"
+dotnet build LocalMeetingSubtitle.sln -c Debug
+dotnet test tests/LocalMeetingSubtitle.UnitTests/LocalMeetingSubtitle.UnitTests.csproj -c Debug
+dotnet test tests/LocalMeetingSubtitle.IntegrationTests/LocalMeetingSubtitle.IntegrationTests.csproj -c Debug
+
+# 下载中英模型（也可在 App 的 设置 → 识别 里点「下载模型」）
+dotnet run --project tools\ModelManager -c Release -- install --id streaming-zipformer-bilingual-zh-en
+
+# A/B 复现（中英 vs 中文；热词生效性对照）
+tools\AsrBenchmark\bin\Release\net8.0-windows\AsrBenchmark.exe --wav testmedia\tts\hw2.wav --model-id streaming-zipformer-zh-14M --threads 4 --decoding modified_beam_search --hotwords testmedia\tts\hotwords.txt --hotwords-score 4.0
+tools\AsrBenchmark\bin\Release\net8.0-windows\AsrBenchmark.exe --wav testmedia\tts\hw2.wav --model-id streaming-zipformer-bilingual-zh-en --threads 4 --decoding modified_beam_search --hotwords testmedia\tts\hotwords.txt --hotwords-score 4.0
+```
+
+### 断点续跑信息（下一会话）
+- **当前阶段：** v0.5.0 已发布；本次为**插入特性**（中英模型可选），**V0.5 Phase 5 仍未开始**。
+- **下一步（二选一）：** (a) 回到 V0.5 Phase 5「对话编辑界面」；或 (b) 在**真实中英会议录音**上验收本次特性
+  （这是"准确率不下降"的唯一可信判定方式）。
+- **未测 / 阻塞：** 目标机（Win11 + Core Ultra 7 155H）**全部 BLOCKED**；中英模型的 RTF/内存仅在开发主机测得；
+  中英模型的中文重复字仅在合成音与 8 kHz 素材上观察到，**真实会议音频未测**；中英模型未打进安装包，
+  首次使用需要网络。限制记录见 `KNOWN_ISSUES` P3-27 / P3-28。
